@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0c10" media="(prefers-color-scheme: dark)">
+<title>Blog — Actalithic</title>
+<link rel="icon" type="image/png" href="https://i.ibb.co/KxCDDsc7/logoico.png">
+<link rel="apple-touch-icon" href="https://i.ibb.co/KxCDDsc7/logoico.png">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script>
+(function(){
+  var s=localStorage.getItem('llm-theme');
+  document.documentElement.setAttribute('data-theme',s||(window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'));
+})();
+</script>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="header-brand">
+    <img id="headerLogo" class="logo-img"
+      src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png"
+      alt="LocalLLM by Actalithic">
+  </div>
+  <div class="header-right">
+    <a class="icon-btn" href="index.html" title="Open LocalLLM">
+      <span class="material-icons-round">home</span>
+    </a>
+    <a class="icon-btn bsky" href="https://bsky.app/profile/actalithic.bsky.social" target="_blank" rel="noopener" title="Actalithic on Bluesky">
+      <svg viewBox="0 0 600 530" xmlns="http://www.w3.org/2000/svg"><path d="m135.72 44.03c66.496 49.921 138.02 151.14 164.28 205.46 26.262-54.316 97.782-155.54 164.28-205.46 47.98-36.021 125.72-63.892 125.72 24.795 0 17.712-10.155 148.79-16.111 170.07-20.703 73.984-96.144 92.854-163.25 81.433 117.3 19.964 147.14 86.092 82.697 152.22-122.39 125.59-175.91-31.511-189.63-71.766-2.514-7.3797-3.6904-10.832-3.7077-7.8964-0.0174-2.9357-1.1937 0.51669-3.7077 7.8964-13.714 40.255-67.233 197.36-189.63 71.766-64.444-66.128-34.605-132.26 82.697-152.22-67.108 11.421-142.55-7.4491-163.25-81.433-5.9562-21.282-16.111-152.36-16.111-170.07 0-88.687 77.742-60.816 125.72-24.795z" fill="currentColor"/></svg>
+    </a>
+    <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme">
+      <span class="material-icons-round" id="themeIcon">dark_mode</span>
+    </button>
+  </div>
+</header>
+
+<div class="offline-banner" id="offlineBanner">
+  <span class="material-icons-round">wifi_off</span>
+  You are offline. Blog content loaded from cache.
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+  BLOG CONTENT
+  ──────────────────────────────────────────────────────────────
+  HOW TO ADD A NEW POST:
+  1. Copy the <article class="post-card"> block below
+  2. Paste it ABOVE the existing post (newest post goes first)
+  3. Fill in: date, post-tag class, post-title, post-body text
+  4. For the image: replace the src URL, or remove <img> and
+     delete the style="display:none" from the placeholder div
+
+  AVAILABLE TAG CLASSES:
+    class="post-tag release"       → green
+    class="post-tag update"        → blue
+    class="post-tag announcement"  → amber/orange
+    class="post-tag guide"         → purple
+══════════════════════════════════════════════════════════════ -->
+<main class="blog-main">
+
+  <div class="blog-page-header">
+    <div class="blog-page-title">Actalithic <span>Blog</span></div>
+    <div class="blog-page-sub">Updates, releases, and news from the Actalithic team. We build LocalLLM — a completely private, browser-native AI that runs on your own hardware.</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+    NEWEST POST GOES HERE ↓ (paste above existing posts)
+  ══════════════════════════════════════════════════════ -->
+
+
+  <!-- ══════════════════════════════════════════════════════
+    POST — LocalLLM Public Launch
+  ══════════════════════════════════════════════════════ -->
+  <article class="post-card">
+
+    <div class="post-meta">
+      <span>Feb 18, 2026</span>
+      <span class="post-tag release">Release</span>
+    </div>
+
+    <div class="post-title">LocalLLM is live — welcome to actalithic.github.io</div>
+
+    <!-- Post image. Replace src with your own URL. On error, shows placeholder. -->
+    <img
+      class="post-image"
+      src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png"
+      alt="LocalLLM launch"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+    >
+    <div class="post-image-placeholder" style="display:none">
+      <span class="material-icons-round">image</span> Image unavailable
+    </div>
+
+    <div class="post-body">
+      <p>After weeks of development, we're officially launching <strong>LocalLLM</strong> — a fully browser-native AI assistant that runs entirely on your own hardware. No accounts. No API keys. No servers. Zero data ever leaves your device.</p>
+
+      <p>We built LocalLLM because we believe privacy-first AI shouldn't require a PhD to run. You open a webpage, pick a model, and within a few minutes you have a capable AI running completely offline on your GPU — powered by WebGPU and the incredible work of the MLC AI team.</p>
+
+      <p><strong>What we're launching with:</strong> Six carefully curated models spanning a wide range of sizes and capabilities — from the blazing fast <strong>Llama 3.2 1B</strong> that runs on nearly any device, all the way up to <strong>Llama 3.3 70B</strong> for those with high-end hardware. We're starting lean. More models are coming soon.</p>
+
+      <p><strong>ActalithicCore</strong> is our custom GPU+CPU hybrid engine mode. It intelligently splits model layers between your GPU VRAM and system RAM, letting you run models far larger than your VRAM would normally allow — without giving up GPU acceleration. When you enable it, you'll see a live breakdown of exactly how your hardware is being used.</p>
+
+      <p>This is just the beginning. We have a lot planned — more models, more engine features, and things we're not ready to talk about yet. Follow us on Bluesky to stay in the loop, and check back here for updates.</p>
+
+      <p style="color:var(--muted);font-size:.82em">— The Actalithic Team</p>
+    </div>
+
+    <div class="post-footer">
+      <div class="post-author">
+        <div class="author-dot">AC</div>
+        <span>Actalithic Team</span>
+      </div>
+      <div class="post-share">
+        <a class="share-btn" href="https://bsky.app/profile/actalithic.bsky.social" target="_blank" rel="noopener" title="Follow on Bluesky">
+          <svg viewBox="0 0 600 530" xmlns="http://www.w3.org/2000/svg" style="width:11px;height:11px"><path d="m135.72 44.03c66.496 49.921 138.02 151.14 164.28 205.46 26.262-54.316 97.782-155.54 164.28-205.46 47.98-36.021 125.72-63.892 125.72 24.795 0 17.712-10.155 148.79-16.111 170.07-20.703 73.984-96.144 92.854-163.25 81.433 117.3 19.964 147.14 86.092 82.697 152.22-122.39 125.59-175.91-31.511-189.63-71.766-2.514-7.3797-3.6904-10.832-3.7077-7.8964-0.0174-2.9357-1.1937 0.51669-3.7077 7.8964-13.714 40.255-67.233 197.36-189.63 71.766-64.444-66.128-34.605-132.26 82.697-152.22-67.108 11.421-142.55-7.4491-163.25-81.433-5.9562-21.282-16.111-152.36-16.111-170.07 0-88.687 77.742-60.816 125.72-24.795z" fill="currentColor"/></svg>
+        </a>
+      </div>
+    </div>
+
+  </article>
+
+  <!-- ══════════════════════════════════════════════════════
+    PASTE NEW POSTS ABOVE THIS LINE
+  ══════════════════════════════════════════════════════ -->
+
+</main>
+
+<!-- ══════════════════════════════════════════════════════════════
+  POST TEMPLATE — copy everything between the dashes and paste
+  above the "PASTE NEW POSTS ABOVE" comment when adding a post.
+  ─────────────────────────────────────────────────────────────
+
+  <article class="post-card">
+    <div class="post-meta">
+      <span>Month DD, YYYY</span>
+      <span class="post-tag release">Release</span>
+    </div>
+
+    <div class="post-title">Your post title</div>
+
+    <img
+      class="post-image"
+      src="YOUR_IMAGE_URL_HERE"
+      alt="Post image"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+    >
+    <div class="post-image-placeholder" style="display:none">
+      <span class="material-icons-round">image</span> Image unavailable
+    </div>
+
+    <div class="post-body">
+      <p>Your post content here. Use <strong>bold text</strong> and <a href="#">links</a>.</p>
+      <p>You can have multiple paragraphs. Use <code>inline code</code> for technical terms.</p>
+    </div>
+
+    <div class="post-footer">
+      <div class="post-author">
+        <div class="author-dot">AC</div>
+        <span>Actalithic Team</span>
+      </div>
+    </div>
+  </article>
+
+══════════════════════════════════════════════════════════════ -->
+
+<script type="module">
+import { toggleTheme } from './js/theme.js';
+window.toggleTheme = toggleTheme;
+
+// Fix theme icon after load
+const t = document.documentElement.getAttribute('data-theme');
+const icon = document.getElementById('themeIcon');
+if (icon) icon.textContent = t === 'dark' ? 'light_mode' : 'dark_mode';
+
+// Listen for theme changes from other tabs
+window.addEventListener('storage', e => {
+  if (e.key === 'llm-theme' && e.newValue) {
+    document.documentElement.setAttribute('data-theme', e.newValue);
+    if (icon) icon.textContent = e.newValue === 'dark' ? 'light_mode' : 'dark_mode';
+  }
+});
+
+// Online/offline
+function updateOnline() {
+  document.getElementById('offlineBanner').classList.toggle('visible', !navigator.onLine);
+}
+window.addEventListener('online',  updateOnline);
+window.addEventListener('offline', updateOnline);
+updateOnline();
+</script>
+
+</body>
+</html>
