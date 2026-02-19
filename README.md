@@ -2,26 +2,36 @@
 
 Run LLMs 100% locally in your browser — no server, no API key, no data leaves your device.
 
-## LICENSE
-© 2026 Actalithic. All rights reserved.  
-This project is proprietary and closed source. You may not copy, distribute, modify, resell, or create derivative works of this software without explicit permission.
+## File Structure
 
----
-
-This project uses the following third-party software:
-
-@mlc-ai/web-llm  
-Copyright 2026 The Contributors.  
-Licensed under the Apache License, Version 2.0  
-You may obtain a copy of the License at:  
-    https://www.apache.org/licenses/LICENSE-2.0
-
-A copy of the full Apache License, Version 2.0 text is included in this distribution in the file LICENSE‑2.0.txt.
+```
+localllm/
+├── index.html        ← Main page (UI markup)
+├── sw.js             ← Service worker (offline + logo caching)
+├── css/
+│   └── style.css     ← All styles (themes, layout, components)
+└── js/
+    ├── models.js     ← Model registry (IDs, sizes, URLs, per-device tok/s)
+    ├── app.js        ← App logic (load/chat/modal/info popup)
+    └── theme.js      ← Theme toggle + online/offline banner
+```
 
 ## Requirements
 
 - **Chrome or Chromium** with WebGPU enabled (chrome://flags/#enable-webgpu-developer-features)  
 - OR use the **CPU / WASM fallback** toggle for any browser (slower)
+
+## Running Locally
+
+Serve with any static file server — ES modules require HTTP(S):
+
+```bash
+npx serve .
+# or
+python -m http.server 8080
+```
+
+Then open `http://localhost:8080`.
 
 ## Features
 
