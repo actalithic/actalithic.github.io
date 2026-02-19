@@ -1,4 +1,14 @@
-© 2026 Actalithic. All rights reserved.
+© 2026 Actalithic. All rights reserved.  
+This project is proprietary and closed source. You may not copy, distribute, modify, resell, or create derivative works of this software without explicit permission.
 
-This repository is for personal or internal use only. 
-You may not copy, distribute, modify, resell, or create derivative works of this software without explicit permission.
+---
+
+This project uses the following third-party software:
+
+@mlc-ai/web-llm  
+Copyright [years] The Contributors.  
+Licensed under the Apache License, Version 2.0  
+You may obtain a copy of the License at:  
+    https://www.apache.org/licenses/LICENSE-2.0
+
+A copy of the full Apache License, Version 2.0 text is included in this distribution in the file LICENSE‑APACHE‑2.0.txt.
