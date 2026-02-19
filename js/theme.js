@@ -22,7 +22,7 @@ function applyLogos() {
 // Apply on load
 (function(){
   const s = localStorage.getItem("llm-theme");
-  const t = s || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const t = s || "dark";
   document.documentElement.setAttribute("data-theme", t);
   window.addEventListener("DOMContentLoaded", () => {
     applyLogos();

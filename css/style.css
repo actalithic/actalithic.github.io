@@ -525,8 +525,8 @@ header{
 .progress-row{display:flex;justify-content:space-between;align-items:center;gap:1rem}
 .progress-status{font-size:.62rem;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .progress-label{font-size:.65rem;color:var(--ink);letter-spacing:.05em;flex-shrink:0;font-weight:500}
-.disclaimer-note{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:.7rem .9rem;font-size:.64rem;line-height:1.7;color:var(--muted);display:flex;gap:.55rem;align-items:flex-start;width:100%;max-width:440px}
-.disclaimer-note .material-icons-round{font-size:13px;flex-shrink:0;margin-top:2px}
+.disclaimer-note{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:.9rem 1.1rem;font-size:.72rem;line-height:1.75;color:var(--muted);display:flex;gap:.65rem;align-items:flex-start;width:100%;max-width:440px}
+.disclaimer-note .material-icons-round{font-size:16px;flex-shrink:0;margin-top:1px}
 
 /* model select card */
 .model-select-card{width:100%;max-width:440px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);overflow:visible}
@@ -534,21 +534,21 @@ header{
 
 /* speed table */
 .speed-table{width:100%;max-width:440px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);overflow:hidden}
-.speed-table-head{padding:.45rem .85rem;font-size:.55rem;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
-.speed-row{display:flex;align-items:center;gap:.5rem;padding:.5rem .85rem;border-bottom:1px solid var(--border)}
+.speed-table-head{padding:.65rem 1.1rem;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
+.speed-row{display:flex;align-items:center;gap:.5rem;padding:.65rem 1.1rem;border-bottom:1px solid var(--border)}
 .speed-row:last-child{border-bottom:none}
-.speed-device{flex:1;font-size:.65rem;color:var(--ink2)}
-.speed-val{color:var(--muted);white-space:nowrap;font-size:.6rem;text-align:right}
+.speed-device{flex:1;font-size:.78rem;color:var(--ink2)}
+.speed-val{color:var(--ink);white-space:nowrap;font-size:.75rem;text-align:right;font-weight:500}
 
 /* toggle rows */
-.toggle-section{width:100%;max-width:440px;display:flex;flex-direction:column;gap:.35rem}
-.toggle-section-label{font-size:.55rem;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
-.exp-row{display:flex;align-items:center;gap:.65rem;padding:.6rem .85rem;border:1px solid var(--border);border-radius:9px;background:var(--bg2)}
+.toggle-section{width:100%;max-width:440px;display:flex;flex-direction:column;gap:.55rem}
+.toggle-section-label{font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:.2rem}
+.exp-row{display:flex;align-items:center;gap:.9rem;padding:1rem 1.1rem;border:1px solid var(--border);border-radius:10px;background:var(--bg2);transition:background .15s}
 .exp-label{flex:1;min-width:0}
-.exp-label-title{font-size:.74rem;color:var(--ink);display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;line-height:1.4}
-.exp-label-sub{font-size:.6rem;color:var(--muted);margin-top:3px;line-height:1.55}
-.exp-badge{font-size:.5rem;letter-spacing:.08em;text-transform:uppercase;color:var(--blue);border:1px solid var(--blue);background:var(--blue-bg);padding:2px 6px;border-radius:4px;white-space:nowrap;flex-shrink:0}
-.core-badge{font-size:.5rem;letter-spacing:.08em;text-transform:uppercase;color:var(--purple);border:1px solid var(--purple);background:var(--purple-bg);padding:2px 6px;border-radius:4px;white-space:nowrap;flex-shrink:0}
+.exp-label-title{font-size:.88rem;color:var(--ink);display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;line-height:1.4;font-weight:500}
+.exp-label-sub{font-size:.71rem;color:var(--muted);margin-top:5px;line-height:1.65}
+.exp-badge{font-size:.55rem;letter-spacing:.07em;text-transform:uppercase;color:var(--blue);border:1px solid var(--blue);background:var(--blue-bg);padding:3px 8px;border-radius:4px;white-space:nowrap;flex-shrink:0}
+.core-badge{font-size:.55rem;letter-spacing:.07em;text-transform:uppercase;color:var(--purple);border:1px solid var(--purple);background:var(--purple-bg);padding:3px 8px;border-radius:4px;white-space:nowrap;flex-shrink:0}
 .toggle{position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0}
 .toggle input{opacity:0;width:0;height:0;position:absolute}
 .toggle-slider{position:absolute;inset:0;border-radius:22px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;transition:all .2s}
