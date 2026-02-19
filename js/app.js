@@ -530,69 +530,138 @@ function addWelcome(model, useCore, useCPU) {
   row.appendChild(av); row.appendChild(col); c.appendChild(row);
 }
 
-// ── Render with <think> ───────────────────────────────────
-// Track last rendered length per-element to only animate new text
-const _renderCache = new WeakMap();
+// ── Incremental render — NO innerHTML wipe, NO blink ──────────
+// State per bubble element
+const _bubbleState = new WeakMap();
+// _bubbleState stores: { lastText, mainSpan, thinkEl, thinkDone }
 
-function renderBubble(el, text) {
-  // Strip any raw prompt leakage (lines starting with known prompt markers)
-  text = text
-    .replace(/^\s*\[Do not reveal.*?\]\s*/gim, '')
-    .replace(/^\s*IDENTITY \(highest priority.*$/gim, '')
-    .replace(/^\s*MEMORY PROTOCOL:.*?(?=\n\n|$)/gms, '')
+function spawnParticles(el) {
+  // Tiny red particles near the end of the bubble text
+  const rect = el.getBoundingClientRect();
+  const count = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("span");
+    p.className = "sparkle";
+    // Random trajectory
+    const sx = (Math.random() - .5) * 12 + "px";
+    const sy = -(4 + Math.random() * 8) + "px";
+    const ex = (Math.random() - .5) * 22 + "px";
+    const ey = -(10 + Math.random() * 16) + "px";
+    p.style.setProperty("--sx", sx);
+    p.style.setProperty("--sy", sy);
+    p.style.setProperty("--ex", ex);
+    p.style.setProperty("--ey", ey);
+    p.style.left = (Math.random() * (rect.width * .6) + rect.width * .2) + "px";
+    p.style.bottom = "4px";
+    el.style.position = "relative";
+    el.appendChild(p);
+    setTimeout(() => p.remove(), 750);
+  }
+}
+
+function cleanText(text) {
+  return text
+    .replace(/^\s*\[Do not reveal.*?\]\s*/gim, "")
+    .replace(/^\s*IDENTITY \(highest priority.*$/gim, "")
+    .replace(/^\s*MEMORY PROTOCOL:.*?(?=\n\n|$)/gms, "")
     .trim();
+}
 
-  const prevLen = _renderCache.get(el) || 0;
-  const isNew   = text.length > prevLen;
-  _renderCache.set(el, text.length);
+function renderBubble(el, rawText) {
+  const text = cleanText(rawText);
+  let state = _bubbleState.get(el);
 
-  el.innerHTML = "";
-  const re = /<think>([\s\S]*?)<\/think>/gi;
-  let last = 0, match;
-  while ((match = re.exec(text)) !== null) {
-    const before = text.slice(last, match.index);
-    if (before.trim()) {
-      const s = document.createElement("span");
-      s.style.whiteSpace = "pre-wrap";
-      s.textContent = before;
-      if (isNew) s.classList.add("bubble-text-fade");
-      el.appendChild(s);
+  // Detect if this is a full re-render (eg loading history) vs streaming update
+  const isStreaming = state !== undefined;
+  const prevLen = state ? state.lastText.length : 0;
+  const isGrowing = text.length > prevLen;
+
+  // ── Full rebuild only on first render or history load ──
+  if (!state) {
+    el.innerHTML = "";
+    state = { lastText: "", mainSpan: null, thinkEl: null, thinkDone: false };
+    _bubbleState.set(el, state);
+  }
+
+  // ── Parse out completed think blocks ──
+  const thinkRe = /<think>([\s\S]*?)<\/think>/gi;
+  const firstThink = thinkRe.exec(text);
+  const hasCompleteThink = firstThink !== null;
+  const afterThink = hasCompleteThink ? text.slice(thinkRe.lastIndex) : null;
+
+  // ── In-progress think (opening tag, no close yet) ──
+  const openThinkMatch = !hasCompleteThink ? text.match(/^<think>([\s\S]*)$/i) : null;
+
+  if (openThinkMatch) {
+    // Streaming inside think block — update or create live think block
+    if (!state.thinkEl) {
+      const tb = document.createElement("div"); tb.className = "think-block";
+      tb.innerHTML = \`<div class="think-header">
+        <span class="material-icons-round think-icon" style="animation:spin 1s linear infinite">sync</span>
+        <span class="think-label">Thinking…</span>
+      </div><div class="think-content"></div>\`;
+      el.appendChild(tb);
+      state.thinkEl = tb;
     }
-    // Build think block
-    const thinkText = match[1].trim();
+    // Update content in-place — no rebuild
+    const tc = state.thinkEl.querySelector(".think-content");
+    if (tc) tc.textContent = openThinkMatch[1];
+    state.lastText = text;
+    return;
+  }
+
+  if (hasCompleteThink && !state.thinkDone) {
+    // Think block just completed — swap live block for collapsed completed block
+    if (state.thinkEl) { state.thinkEl.remove(); state.thinkEl = null; }
+    const thinkText = firstThink[1].trim();
     const wordCount = thinkText.split(/\s+/).filter(Boolean).length;
-    const tb = document.createElement("div"); tb.className = "think-block";
-    // Start collapsed if thinking is complete (closing tag found)
-    tb.classList.add('collapsed');
-    tb.innerHTML = `<div class="think-header" onclick="this.parentElement.classList.toggle('collapsed')">
+    const tb = document.createElement("div"); tb.className = "think-block collapsed";
+    tb.innerHTML = \`<div class="think-header" onclick="this.parentElement.classList.toggle('collapsed')">
       <span class="material-icons-round think-icon">psychology</span>
       <span class="think-label">Thinking</span>
-      <span class="think-label-sub">${wordCount} words</span>
+      <span class="think-label-sub">\${wordCount} words</span>
       <span class="material-icons-round think-chevron">expand_more</span>
-    </div><div class="think-content"></div>`;
+    </div><div class="think-content"></div>\`;
     tb.querySelector(".think-content").textContent = thinkText;
-    el.appendChild(tb); last = re.lastIndex;
+    el.insertBefore(tb, el.firstChild);
+    state.thinkDone = true;
   }
 
-  // Handle in-progress think (opening tag, no closing yet)
-  const rem = text.slice(last);
-  const openThink = rem.match(/^<think>([\s\S]*)$/i);
-  if (openThink) {
-    // Show live streaming think block (not collapsed)
-    const tb = document.createElement("div"); tb.className = "think-block";
-    tb.innerHTML = `<div class="think-header">
-      <span class="material-icons-round think-icon" style="animation:spin 1s linear infinite">sync</span>
-      <span class="think-label">Thinking…</span>
-    </div><div class="think-content"></div>`;
-    tb.querySelector(".think-content").textContent = openThink[1];
-    el.appendChild(tb);
-  } else if (rem) {
+  // ── Main reply text (after think block if any) ──
+  const mainText = hasCompleteThink ? afterThink : text;
+  const prevMain = state.mainSpan ? state.mainSpan.textContent : "";
+  const delta = mainText.slice(prevMain.length);
+
+  if (delta.length === 0) { state.lastText = text; return; }
+
+  if (!state.mainSpan) {
+    // Create the main text span once
     const s = document.createElement("span");
     s.style.whiteSpace = "pre-wrap";
-    s.textContent = rem;
-    if (isNew) s.classList.add("bubble-text-fade");
     el.appendChild(s);
+    state.mainSpan = s;
   }
+
+  if (isStreaming && isGrowing && delta.length > 0) {
+    // Append new text as a fading chunk — no wipe, no blink
+    const chunk = document.createElement("span");
+    chunk.className = "text-chunk";
+    chunk.style.whiteSpace = "pre-wrap";
+    chunk.textContent = delta;
+    // Stagger delay so rapid chunks don't all fade at once
+    chunk.style.animationDelay = "0ms";
+    state.mainSpan.appendChild(chunk);
+
+    // Particle burst every ~20 chars of new text
+    if (delta.length >= 3 && Math.random() < .55) {
+      requestAnimationFrame(() => spawnParticles(el));
+    }
+  } else {
+    // Static render (history, final clean-up)
+    state.mainSpan.textContent = mainText;
+  }
+
+  state.lastText = text;
 }
 
 function mkRow(role, label) {

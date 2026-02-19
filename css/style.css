@@ -565,11 +565,7 @@ header{
 .msg-row.ai   .bubble{background:var(--bg2);border-color:var(--border);border-radius:3px 12px 12px 12px;color:var(--ink)}
 .msg-row.user .bubble{background:var(--ink);color:var(--accent-inv);border-radius:12px 3px 12px 12px}
 /* Text fade-in for streaming AI text */
-.bubble-text-fade{animation:textFadeIn .35s ease forwards}
-@keyframes textFadeIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
 /* Welcome bubble subtle fade */
-.msg-row.ai .bubble:not(:empty){animation:bubbleFadeIn .3s ease}
-@keyframes bubbleFadeIn{from{opacity:0}to{opacity:1}}
 
 /* think block */
 .think-block{background:var(--think-bg);border:1px solid var(--think-border);border-radius:4px;overflow:hidden;margin-bottom:.4rem;margin-top:.2rem}
@@ -1000,13 +996,13 @@ header .logo-img { /* sizes set by responsive rules above */ }
 .picker-think-toggle{position:relative;display:inline-block;width:28px;height:16px;flex-shrink:0}
 .picker-think-toggle input{opacity:0;width:0;height:0;position:absolute}
 .picker-think-slider{
-  position:absolute;inset:0;border-radius:16px;
+  position:absolute;inset:0;border-radius:2px;
   background:var(--bg3);border:1px solid var(--border);cursor:pointer;
   transition:all .2s;
 }
 .picker-think-slider:before{
   content:'';position:absolute;width:10px;height:10px;
-  border-radius:50%;left:2px;top:2px;background:var(--muted);transition:.2s;
+  border-radius:1px;left:2px;top:2px;background:var(--muted);transition:.2s;
 }
 .picker-think-toggle input:checked + .picker-think-slider{
   background:var(--purple);border-color:var(--purple);
@@ -1184,4 +1180,27 @@ header .logo-img { /* sizes set by responsive rules above */ }
   .input-bar      { padding: .8rem 5rem 1rem; }
   .info-bar       { padding: 0 5rem .6rem; }
   .core-stats-bar { padding: .6rem 5rem .5rem; }
+}
+
+/* ── Streaming text fade-in (no blink, incremental) ── */
+.text-chunk{opacity:0;animation:chunkFade .55s cubic-bezier(.25,.46,.45,.94) forwards}
+@keyframes chunkFade{
+  0%  {opacity:0;transform:translateY(2px)}
+  100%{opacity:1;transform:none}
+}
+
+/* ── Red sparkle particles ── */
+.sparkle{
+  position:absolute;
+  width:3px;height:3px;
+  border-radius:50%;
+  background:#b80000;
+  pointer-events:none;
+  z-index:10;
+  animation:sparkleFly .7s ease-out forwards;
+}
+@keyframes sparkleFly{
+  0%  {opacity:.9;transform:translate(0,0) scale(1)}
+  40% {opacity:.7;transform:translate(var(--sx),var(--sy)) scale(.8)}
+  100%{opacity:0;transform:translate(var(--ex),var(--ey)) scale(.2)}
 }
