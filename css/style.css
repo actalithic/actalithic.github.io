@@ -688,7 +688,6 @@ textarea#msgInput::placeholder{color:var(--muted)}
   header{padding:.8rem 2rem}
   .header-brand img.logo-img{height:58px}
   #loadScreen{padding:3rem 2rem 6rem;gap:1.8rem}
-  .progress-wrap,.disclaimer-note,.speed-table,.toggle-section,.model-select-card,.load-btn{max-width:480px}
   .messages{padding:2rem 2.5rem;gap:1.4rem}
   .input-bar{padding:.75rem 2.5rem 1rem}
   .core-stats-bar{padding:.6rem 2.5rem .5rem}
@@ -1041,149 +1040,173 @@ header .logo-img { /* sizes set by responsive rules above */ }
   transform:translateX(12px);background:#fff;
 }
 
-
 /* ════════════════════════════════════════════════════════
-   DESKTOP TWO-COLUMN LOAD SCREEN
+   DESKTOP LAYOUT — full-width, two columns
 ════════════════════════════════════════════════════════ */
+@media(min-width: 900px) {
 
-/* Mobile: single column, everything stacked centered */
-.load-desktop-cols {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  max-width: 500px;
-  gap: 1.4rem;
-}
-.load-col {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  gap: 1rem;
-}
-.load-col-title {
-  display: flex;
-  align-items: center;
-  gap: .45rem;
-  font-family: 'DM Mono', monospace;
-  font-size: .6rem;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding-bottom: .4rem;
-  border-bottom: 1px solid var(--border);
-}
-.load-col-title .material-icons-round { font-size: 14px; }
+  /* Body: stop centering, let children stretch */
+  body { align-items: stretch; }
 
-/* Desktop: two columns side by side */
-@media(min-width: 820px) {
+  /* Header: full width, no cap */
+  header {
+    max-width: none;
+    width: 100%;
+    padding: .8rem 2.5rem;
+  }
+
+  /* Load screen: full width, two-col row, no max-width cap */
   #loadScreen {
-    max-width: 100%;
+    max-width: none;
     width: 100%;
-    padding: 1.5rem 3rem 2rem;
-    align-items: flex-start;
-    overflow-y: auto;
-    overflow-x: hidden;
-    gap: 1rem;
-  }
-
-  /* Progress bar spans full width */
-  #progressWrap {
-    max-width: 100%;
-    width: 100%;
-  }
-
-  .load-desktop-cols {
     flex-direction: row;
-    align-items: flex-start;
-    justify-content: flex-start;
-    max-width: 100%;
+    align-items: stretch;
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+    height: calc(100dvh - 65px);
+  }
+
+  /* ── Two-column container fills the whole load screen ── */
+  .load-desktop-cols {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
     width: 100%;
-    gap: 3rem;
-    flex: 1;
+    height: 100%;
+    gap: 0;
   }
 
-  /* RIGHT col: branding + picker — fixed comfortable width */
+  /* ── RIGHT col: branding + picker — 44% of screen ── */
   .load-col-right {
-    width: 380px;
+    width: 44%;
     min-width: 340px;
-    max-width: 420px;
+    max-width: none;
     flex-shrink: 0;
-    order: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 2.5rem 3rem;
     gap: 1.2rem;
+    overflow-y: auto;
+    order: 2;
+    border-left: 1px solid var(--border);
   }
 
-  /* LEFT col: options — fills remaining space */
+  /* ── LEFT col: options — 56% of screen ── */
   .load-col-left {
     flex: 1;
-    min-width: 280px;
-    max-width: 520px;
+    min-width: 0;
+    max-width: none;
+    display: flex;
+    flex-direction: column;
+    padding: 2.5rem 3rem;
+    gap: 1.2rem;
+    overflow-y: auto;
     order: 1;
-    gap: 1.1rem;
+    background: var(--bg2);
   }
 
-  /* Right col elements fill their container */
+  /* Strip max-width from every child in both cols */
   .load-col-right .model-select-card,
-  .load-col-right .load-btn {
+  .load-col-right .load-btn,
+  .load-col-right .load-hero,
+  .load-col-right .load-logo-wrap,
+  .load-col-left .speed-table,
+  .load-col-left .toggle-section,
+  .load-col-left .disclaimer-note,
+  .load-col-left .progress-wrap,
+  .progress-wrap {
     max-width: 100%;
     width: 100%;
   }
 
-  /* Logo bigger on desktop */
+  /* Logo sizing */
   .load-col-right .load-logo-img {
-    height: min(100px, 12vw);
+    height: clamp(60px, 8vw, 120px);
   }
 
-  /* Brand text bigger on desktop */
+  /* Brand name */
   .load-col-right .hero-brand-text {
-    font-size: clamp(2.8rem, 5vw, 4.5rem);
+    font-size: clamp(3rem, 4.5vw, 5.5rem);
   }
 
-  /* Title and subtitle bigger on desktop */
+  /* Tagline */
   .load-col-right .load-title {
-    font-size: 1.05rem;
+    font-size: clamp(1rem, 1.3vw, 1.3rem);
   }
 
+  /* Subtitle */
   .load-col-right .load-sub {
-    font-size: .8rem;
+    font-size: clamp(.8rem, 1vw, 1rem);
     max-width: 100%;
     margin: 0;
+    line-height: 1.8;
   }
 
   .load-col-right .load-hero {
     text-align: left;
     align-items: flex-start;
+    max-width: 100%;
   }
 
   .load-col-right .load-logo-wrap {
     justify-content: flex-start;
   }
 
-  /* Left col options fill width */
-  .load-col-left .speed-table,
-  .load-col-left .toggle-section,
-  .load-col-left .disclaimer-note,
-  .load-col-left .progress-wrap {
-    max-width: 100%;
+  #progressWrap { max-width: 100%; width: 100%; }
+
+  /* Column title labels */
+  .load-col-title {
+    font-size: .65rem;
+    margin-bottom: .3rem;
   }
+
+  /* Load button full width */
+  .load-col-right .load-btn {
+    max-width: 100%;
+    margin-top: auto;
+  }
+
+  /* Model picker: ensure dropdown doesn't clip */
+  .model-picker-dropdown {
+    position: absolute;
+    z-index: 999;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 45vh;
+    overflow-y: auto;
+  }
+  .model-picker-wrap {
+    position: relative;
+  }
+
+  /* Chat screen also full width */
+  #chatScreen {
+    max-width: none;
+    width: 100%;
+  }
+  .messages {
+    padding: 2rem 3rem;
+  }
+  .input-bar {
+    padding: .8rem 3rem 1rem;
+  }
+  .info-bar {
+    padding: 0 3rem .6rem;
+  }
+  .core-stats-bar {
+    padding: .6rem 3rem .5rem;
+  }
+  .msg-col { max-width: 60%; }
 }
 
-/* Large desktop: even more breathing room */
-@media(min-width: 1200px) {
-  #loadScreen {
-    padding: 2rem 5rem 2rem;
-  }
-  .load-col-right {
-    width: 420px;
-    max-width: 460px;
-  }
-  .load-col-right .hero-brand-text {
-    font-size: clamp(3.5rem, 4vw, 5rem);
-  }
-  .load-col-right .load-title {
-    font-size: 1.15rem;
-  }
-  .load-col-right .load-sub {
-    font-size: .85rem;
-  }
+@media(min-width: 1300px) {
+  .load-col-right { width: 42%; padding: 3rem 4rem; }
+  .load-col-left  { padding: 3rem 4rem; }
+  .messages       { padding: 2rem 5rem; }
+  .input-bar      { padding: .8rem 5rem 1rem; }
+  .info-bar       { padding: 0 5rem .6rem; }
+  .core-stats-bar { padding: .6rem 5rem .5rem; }
 }
