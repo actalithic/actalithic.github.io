@@ -489,31 +489,6 @@ header{
   padding:2rem 1rem 6rem;gap:1.4rem;
   overflow-y:auto;-webkit-overflow-scrolling:touch;
 }
-/* ── Actalithic two-bar orbital spinner ── */
-.acta-spinner{
-  width:52px;height:52px;position:relative;
-  flex-shrink:0;display:none;
-}
-.acta-spinner::before,
-.acta-spinner::after{
-  content:'';position:absolute;
-  width:7px;height:30px;border-radius:3.5px;
-  top:50%;left:50%;
-}
-.acta-spinner::before{
-  background:var(--red);
-  animation:orbitBarA 1.05s cubic-bezier(.4,0,.6,1) infinite;
-}
-.acta-spinner::after{
-  background:var(--ink);
-  animation:orbitBarB 1.05s cubic-bezier(.4,0,.6,1) infinite;
-}
-@keyframes orbitBarA{
-  from{transform:translate(-50%,-50%) rotate(0deg) translateY(-17px)}
-  to  {transform:translate(-50%,-50%) rotate(360deg) translateY(-17px)}
-}
-@keyframes orbitBarB{
-  from{transform:translate(-50%,-50%) rotate(180deg) translateY(-17px)}
   to  {transform:translate(-50%,-50%) rotate(540deg) translateY(-17px)}
 }
 .load-hero{text-align:center;display:flex;flex-direction:column;gap:.4rem;width:100%;max-width:440px}

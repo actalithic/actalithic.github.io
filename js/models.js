@@ -12,19 +12,19 @@ export const MODELS = [
     source: "Hugging Face / MLC AI",
     sourceUrl: "https://huggingface.co/mlc-ai/Llama-3.2-3B-Instruct-q4f16_1-MLC",
     modelUrl:  "https://huggingface.co/mlc-ai/Llama-3.2-3B-Instruct-q4f16_1-MLC",
-    desc: "Fastest and lightest. Best for phones and low-RAM devices.",
+    desc: "Fastest and lightest. Best for phones and low-RAM devices. Expect 15–20 tok/s on a modern GPU.",
     runability: "easy",
     ctx: 4096,
     mobileRecommended: true,
     tokPerDevice: {
-      dedicatedGPU: "30–80 tok/s",
-      steamDeck:    "10–18 tok/s",
-      laptopIGPU:   "5–12 tok/s",
-      phone:        "3–8 tok/s",
+      dedicatedGPU: "40–80 tok/s",
+      steamDeck:    "15–22 tok/s",
+      laptopIGPU:   "8–16 tok/s",
+      phone:        "4–10 tok/s",
       cpu:          "1–3 tok/s",
-      core:         "Similar or faster"
+      core:         "15–20 tok/s"
     },
-    tok_range: "10–35 tok/s"
+    tok_range: "15–40 tok/s"
   },
   {
     id: "Mistral-7B-Instruct-v0.3-q4f16_1-MLC",
@@ -37,18 +37,18 @@ export const MODELS = [
     source: "Hugging Face / MLC AI",
     sourceUrl: "https://huggingface.co/mlc-ai/Mistral-7B-Instruct-v0.3-q4f16_1-MLC",
     modelUrl:  "https://huggingface.co/mlc-ai/Mistral-7B-Instruct-v0.3-q4f16_1-MLC",
-    desc: "High quality general assistant. Needs a modern GPU or ActalithicCore.",
+    desc: "High quality general assistant. 7–12 tok/s on GPU. Shader compile takes ~30s on first load.",
     runability: "mid",
     ctx: 4096,
     tokPerDevice: {
-      dedicatedGPU: "30–80 tok/s",
-      steamDeck:    "3–6 tok/s",
-      laptopIGPU:   "1–4 tok/s",
+      dedicatedGPU: "12–25 tok/s",
+      steamDeck:    "4–8 tok/s",
+      laptopIGPU:   "2–6 tok/s",
       phone:        "May not load",
       cpu:          "~1 tok/s",
-      core:         "Similar or faster"
+      core:         "7–12 tok/s"
     },
-    tok_range: "4–18 tok/s"
+    tok_range: "7–25 tok/s"
   },
   {
     id: "DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC",
@@ -61,18 +61,18 @@ export const MODELS = [
     source: "Hugging Face / MLC AI",
     sourceUrl: "https://huggingface.co/mlc-ai/DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC",
     modelUrl:  "https://huggingface.co/mlc-ai/DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC",
-    desc: "Reasoning model with visible thinking steps. Great for logic & math.",
+    desc: "Reasoning model with thinking steps. ~5 tok/s on GPU. Needs 8 GB RAM or ActalithicCore.",
     runability: "hard",
     ctx: 4096,
     tokPerDevice: {
-      dedicatedGPU: "30–80 tok/s",
+      dedicatedGPU: "8–18 tok/s",
       steamDeck:    "3–6 tok/s",
       laptopIGPU:   "1–4 tok/s",
       phone:        "Will likely crash",
       cpu:          "~1 tok/s",
-      core:         "Similar or faster"
+      core:         "~5 tok/s"
     },
-    tok_range: "2–12 tok/s"
+    tok_range: "5–18 tok/s"
   },
 ];
 

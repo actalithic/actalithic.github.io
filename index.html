@@ -140,8 +140,6 @@
 
 <!-- ── LOAD SCREEN ── -->
 <div id="loadScreen">
-  <div class="acta-spinner" id="spinner"></div>
-
   <!-- ── TWO-COLUMN LAYOUT (stacks on mobile, side-by-side on desktop) ── -->
   <div class="load-desktop-cols">
 
@@ -200,14 +198,14 @@
     <!-- LEFT column: engine options + speed table (below on mobile, left on desktop) -->
     <div class="load-col load-col-left">
       <div class="load-col-title">
-      Engine Options
+        <span class="material-icons-round">settings</span> Engine Options
       </div>
 
       <div class="toggle-section">
         <div class="exp-row">
           <div class="exp-label">
             <div class="exp-label-title">ActalithicCore <span class="core-badge">Actalithic</span></div>
-            <div class="exp-label-sub">Hybrid GPU+CPU layer splitting. Run 7B+ models on 4–6 GB VRAM by offloading layers to system RAM. Saves 1–4 GB VRAM.</div>
+            <div class="exp-label-sub">Fast hybrid GPU+CPU processing. Offloads excess layers to RAM — runs 7B+ on 4–6 GB VRAM. Targets ~5 tok/s on 8B, 7–12 tok/s on 7B, 15–20 tok/s on 3B. Best for mid-range GPUs.</div>
           </div>
           <label class="toggle"><input type="checkbox" id="coreToggle"><span class="toggle-slider"></span></label>
         </div>

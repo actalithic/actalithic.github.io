@@ -23,7 +23,15 @@ localllm/
 
 ## Running Locally
 
-Native Win/Linux/Mac Port will release in a few weeks,  powered by chromium (electron) with gpu acceleration and fixed settings
+Serve with any static file server — ES modules require HTTP(S):
+
+```bash
+npx serve .
+# or
+python -m http.server 8080
+```
+
+Then open `http://localhost:8080`.
 
 ## Features
 
