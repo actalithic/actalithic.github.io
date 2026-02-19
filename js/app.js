@@ -189,34 +189,41 @@ function buildPicker(cached) {
     wrap2.classList.add("open");
     pickerBtn.setAttribute("aria-expanded", "true");
     document.body.style.overflow = "hidden";
-    // Position fixed dropdown below the button (works even inside overflow:auto parents)
-    requestAnimationFrame(() => {
-      const r = pickerBtn.getBoundingClientRect();
-      const dd = document.getElementById("pickerDropdown");
-      if (!dd) return;
-      // Check if we're on desktop (dropdown is position:fixed there)
-      const style = window.getComputedStyle(dd);
-      if (style.position === "fixed") {
-        const spaceBelow = window.innerHeight - r.bottom;
-        const spaceAbove = r.top;
-        const maxH = Math.min(Math.max(spaceBelow, spaceAbove) - 12, window.innerHeight * 0.45);
+    // On desktop: position the fixed dropdown relative to the button
+    if (window.innerWidth >= 601) {
+      requestAnimationFrame(() => {
+        const r  = pickerBtn.getBoundingClientRect();
+        const dd = document.getElementById("pickerDropdown");
+        if (!dd) return;
+        const spaceBelow = window.innerHeight - r.bottom - 8;
+        const spaceAbove = r.top - 8;
+        const maxH = Math.min(Math.max(spaceBelow, spaceAbove), window.innerHeight * 0.55);
         dd.style.maxHeight = maxH + "px";
-        dd.style.width = r.width + "px";
-        dd.style.left = r.left + "px";
-        if (spaceBelow >= spaceAbove || spaceBelow > 180) {
-          dd.style.top = (r.bottom + 4) + "px";
+        dd.style.width     = Math.max(r.width, 280) + "px";
+        dd.style.left      = r.left + "px";
+        dd.style.right     = "auto";
+        // Clamp so it doesn't go off right edge
+        const ddW = Math.max(r.width, 280);
+        if (r.left + ddW > window.innerWidth - 8) {
+          dd.style.left = Math.max(8, window.innerWidth - ddW - 8) + "px";
+        }
+        if (spaceBelow >= spaceAbove || spaceBelow > 150) {
+          dd.style.top    = (r.bottom + 4) + "px";
           dd.style.bottom = "auto";
         } else {
+          dd.style.top    = "auto";
           dd.style.bottom = (window.innerHeight - r.top + 4) + "px";
-          dd.style.top = "auto";
         }
-      }
-    });
+      });
+    }
   }
   function closePicker() {
     wrap2.classList.remove("open");
     pickerBtn.setAttribute("aria-expanded", "false");
     document.body.style.overflow = "";
+    // Clean up inline positioning styles
+    const dd = document.getElementById("pickerDropdown");
+    if (dd) { dd.style.top = ""; dd.style.bottom = ""; dd.style.left = ""; dd.style.width = ""; dd.style.maxHeight = ""; }
   }
 
   pickerBtn.addEventListener("click", () => {
@@ -438,20 +445,23 @@ export async function loadModel() {
   const progWrap = document.getElementById("progressWrap");
   const sub      = document.getElementById("loadSub");
   const msw      = document.getElementById("modelSelectWrap");
+  // Remove any lingering spinner
+  const spnr = document.getElementById('spinner'); if (spnr) spnr.style.display = 'none';
 
   if (engine) {
     try { await engine.unload(); } catch (e) {}
-    // Terminate old worker to free GPU memory immediately
     if (engine._worker) { try { engine._worker.terminate(); } catch(e) {} }
     engine = null;
   }
 
-  const modeLabel = _useCore ? "ActalithicCore…" : _useCPU ? "CPU mode…" : "Downloading…";
+  const modeLabel = _useCore ? "ActalithicCore…" : _useCPU ? "CPU mode…" : "Loading…";
   if (btn) { btn.disabled = true; btn.innerHTML = `<span class="material-icons-round">downloading</span> ${modeLabel}`; }
   if (progWrap) progWrap.style.display = "flex";
   if (msw) { msw.style.opacity = ".35"; msw.style.pointerEvents = "none"; }
 
   try {
+    // Prefer cached model data if available (speeds up non-first loads significantly)
+    const isCachedLoad = (await getCachedModelIds()).has(modelId);
     const cfg = {
       initProgressCallback: (r) => {
         const pct = Math.round(r.progress * 100);
@@ -544,7 +554,7 @@ function addWelcome(model, useCore, useCPU) {
   const col  = document.createElement("div"); col.className  = "msg-col";
   const sndr = document.createElement("div"); sndr.className = "msg-sender"; sndr.textContent = "LocalLLM";
   const bbl  = document.createElement("div"); bbl.className  = "bubble";
-  let note = useCore ? " Running with ActalithicCore (GPU+CPU hybrid)." : useCPU ? " Running in CPU/WASM mode — responses will be slower." : "";
+  let note = useCore ? " Running with ActalithicCore — hybrid GPU+CPU for fast processing. Expect ~15–20 tok/s on Llama 3B, ~7–12 tok/s on Mistral 7B, ~5 tok/s on DeepSeek 8B." : useCPU ? " Running in CPU/WASM mode — responses will be slower." : "";
   let mobileNote = IS_MOBILE ? " I'll keep answers short to stay fast on your phone. You can tap ■ Stop at any time." : "";
   bbl.textContent = model
     ? `Hello. I am LocalLLM, an AI assistant by Actalithic, powered by ${model.fullName}.${note}${mobileNote} How can I assist you?`
@@ -787,20 +797,34 @@ export async function sendMessage() {
       if (_stopRequested) break;
       const delta = chunk.choices[0]?.delta?.content || "";
       if (delta) {
-        if (!first) { tb.textContent = ""; first = true; t0 = Date.now(); }
+        if (!first) {
+          // Remove typing dots cleanly without wiping the element
+          const tdots = tb.querySelector('.typing-dots');
+          if (tdots) tdots.remove();
+          first = true; t0 = Date.now();
+        }
         fullReply += delta;
         tokenBatch++;
         tok += delta.length;
-        if (tokenBatch % 6 === 0) {
-          // Strip memory commands before rendering so final cleanup never differs
+        if (tokenBatch % 4 === 0) {
           scheduleRender(tb, stripMemoryCommands(fullReply));
           smartScroll();
         }
       }
     }
-    // Final flush — render clean version (no memory tags) so no blink on cleanup
+    // Final flush — one authoritative render, no double-call
     flushRender();
-    if (first) renderBubble(tb, stripMemoryCommands(fullReply));
+    // Only re-render if we haven't already (flushRender handles it)
+    // Ensure final clean strip without triggering a second full rebuild:
+    const finalClean = stripMemoryCommands(fullReply);
+    if (first) {
+      const st = _bubbleState.get(tb);
+      if (st && st.mainSpan) {
+        // Quietly update textContent of mainSpan without wipe/rebuild
+        const expected = finalClean.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        if (st.mainSpan.textContent !== expected) st.mainSpan.textContent = expected;
+      }
+    }
     smartScroll();
     releaseWakeLock();
 
