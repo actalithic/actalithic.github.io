@@ -368,7 +368,7 @@ header{
   overflow:hidden;max-height:60dvh;overflow-y:auto;
   -webkit-overflow-scrolling:touch;
 }
-.model-picker-wrap{position:relative}
+.model-picker-wrap{position:relative;overflow:visible}
 .model-picker.open .model-picker-dropdown{display:block;animation:dropIn .18s ease}
 @keyframes dropIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 
@@ -377,6 +377,7 @@ header{
   .model-picker-dropdown{
     position:fixed;
     left:0;right:0;bottom:0;top:auto;
+    z-index:500;
     border-radius:20px 20px 0 0;
     max-height:75dvh;border:none;
     box-shadow:0 -8px 60px var(--shadow-lg);
@@ -385,7 +386,7 @@ header{
   /* dim backdrop handled by .model-picker-backdrop */
 }
 .model-picker-backdrop{
-  display:none;position:fixed;inset:0;z-index:149;background:rgba(0,0,0,.5);
+  display:none;position:fixed;inset:0;z-index:499;background:rgba(0,0,0,.5);
 }
 .model-picker.open .model-picker-backdrop{display:block}
 
@@ -504,7 +505,7 @@ header{
 .disclaimer-note .material-icons-round{font-size:16px;flex-shrink:0;margin-top:1px}
 
 /* model select card */
-.model-select-card{width:100%;max-width:440px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);overflow:visible}
+.model-select-card{width:100%;max-width:440px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);overflow:visible;position:relative}
 .model-info-row{padding:.55rem .9rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;font-size:.6rem;color:var(--muted);border-top:1px solid var(--border)}
 
 /* speed table */
@@ -1034,7 +1035,7 @@ header .logo-img { /* sizes set by responsive rules above */ }
     align-items: stretch;
     padding: 0;
     gap: 0;
-    overflow: hidden;
+    overflow: visible;
     height: calc(100dvh - 65px);
   }
 
@@ -1059,7 +1060,8 @@ header .logo-img { /* sizes set by responsive rules above */ }
     align-items: flex-start;
     padding: 2.5rem 3rem;
     gap: 1.2rem;
-    overflow-y: auto;
+    overflow-y: visible;
+    overflow-x: visible;
     order: 2;
     border-left: 1px solid var(--border);
   }
@@ -1074,6 +1076,7 @@ header .logo-img { /* sizes set by responsive rules above */ }
     padding: 2.5rem 3rem;
     gap: 1.2rem;
     overflow-y: auto;
+    overflow-x: visible;
     order: 1;
     background: var(--bg2);
   }
@@ -1139,15 +1142,17 @@ header .logo-img { /* sizes set by responsive rules above */ }
     margin-top: auto;
   }
 
-  /* Model picker: ensure dropdown doesn't clip */
+  /* Desktop picker: use fixed positioning to escape all overflow contexts */
   .model-picker-dropdown {
-    position: absolute;
-    z-index: 999;
-    top: 100%;
-    left: 0;
-    right: 0;
+    position: fixed !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 9000;
     max-height: 45vh;
     overflow-y: auto;
+    width: 360px;
+    border-radius: 10px;
+    box-shadow: 0 8px 40px var(--shadow-lg);
   }
   .model-picker-wrap {
     position: relative;
@@ -1203,4 +1208,34 @@ header .logo-img { /* sizes set by responsive rules above */ }
   0%  {opacity:1;transform:translate(0,0) scale(1)}
   60% {opacity:.6;transform:translate(var(--sx),var(--sy)) scale(.7)}
   100%{opacity:0;transform:translate(var(--ex),var(--ey)) scale(.1)}
+}
+
+/* ── Mobile explicit resets to prevent desktop CSS bleed ── */
+@media(max-width: 899px) {
+  body { align-items: center; }
+  header { max-width: 840px; }
+  #loadScreen {
+    max-width: 840px;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem 6rem;
+    overflow-y: auto;
+    height: auto;
+  }
+  .load-desktop-cols {
+    flex-direction: column;
+    align-items: center;
+    max-width: 500px;
+    height: auto;
+  }
+  .load-col-right,
+  .load-col-left {
+    width: 100%;
+    max-width: 500px;
+    overflow: visible;
+    border: none;
+    padding: 0;
+    background: transparent;
+  }
+  #chatScreen { max-width: 840px; }
 }

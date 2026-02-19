@@ -189,6 +189,29 @@ function buildPicker(cached) {
     wrap2.classList.add("open");
     pickerBtn.setAttribute("aria-expanded", "true");
     document.body.style.overflow = "hidden";
+    // Position fixed dropdown below the button (works even inside overflow:auto parents)
+    requestAnimationFrame(() => {
+      const r = pickerBtn.getBoundingClientRect();
+      const dd = document.getElementById("pickerDropdown");
+      if (!dd) return;
+      // Check if we're on desktop (dropdown is position:fixed there)
+      const style = window.getComputedStyle(dd);
+      if (style.position === "fixed") {
+        const spaceBelow = window.innerHeight - r.bottom;
+        const spaceAbove = r.top;
+        const maxH = Math.min(Math.max(spaceBelow, spaceAbove) - 12, window.innerHeight * 0.45);
+        dd.style.maxHeight = maxH + "px";
+        dd.style.width = r.width + "px";
+        dd.style.left = r.left + "px";
+        if (spaceBelow >= spaceAbove || spaceBelow > 180) {
+          dd.style.top = (r.bottom + 4) + "px";
+          dd.style.bottom = "auto";
+        } else {
+          dd.style.bottom = (window.innerHeight - r.top + 4) + "px";
+          dd.style.top = "auto";
+        }
+      }
+    });
   }
   function closePicker() {
     wrap2.classList.remove("open");
