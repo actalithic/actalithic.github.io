@@ -377,8 +377,6 @@ header{
   padding:2rem 1rem 6rem;gap:1.4rem;
   overflow-y:auto;-webkit-overflow-scrolling:touch;
 }
-  to  {transform:translate(-50%,-50%) rotate(540deg) translateY(-17px)}
-}
 .load-hero{text-align:center;display:flex;flex-direction:column;gap:.4rem;width:100%;max-width:440px}
 .load-title{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(.92rem,3vw,1.2rem);color:var(--ink);letter-spacing:-.02em}
 .load-sub{font-size:.75rem;color:var(--muted);line-height:1.85;max-width:360px;margin:0 auto}
@@ -684,6 +682,7 @@ header .logo-img { /* sizes set by responsive rules above */ }
     box-shadow:0 -8px 60px var(--shadow-lg);
     border:none;
     padding-bottom:env(safe-area-inset-bottom,0px);
+    z-index:160;
   }
 }
 
@@ -1116,7 +1115,8 @@ header .logo-img { /* sizes set by responsive rules above */ }
     align-items: stretch;
     max-width: 100%;
     height: auto;
-    padding: 0 1rem;
+    padding: 0;
+    width: 100%;
   }
   .load-col-right,
   .load-col-left {
@@ -1124,8 +1124,14 @@ header .logo-img { /* sizes set by responsive rules above */ }
     max-width: 100%;
     overflow: visible;
     border: none;
-    padding: 1rem 0;
+    padding: 0.75rem 0;
     background: transparent;
+    order: unset;
   }
   #chatScreen { max-width: 840px; }
+}
+/* ═══ Mobile overflow fixes for picker ═══ */
+@media(max-width:600px){
+  .model-select-card{overflow:visible!important}
+  #modelPickerWrap{overflow:visible!important}
 }

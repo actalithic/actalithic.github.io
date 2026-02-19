@@ -243,7 +243,8 @@ function buildPicker(cached) {
 
     const m = MODELS.find(x => x.id === id);
     document.getElementById("pickerLabel").textContent = m.name;
-    document.querySelector("#pickerBtn span:last-of-type").textContent = m.size;
+    const pickerSizeEl = document.querySelector("#pickerBtn span[style*='color:var(--muted)']") || document.querySelector("#pickerBtn span:last-of-type");
+    if (pickerSizeEl) pickerSizeEl.textContent = m.size;
     const dot = document.getElementById("pickerDot");
     if (dot) dot.classList.toggle("visible", cached.has(id));
 
@@ -516,6 +517,10 @@ export async function loadModel() {
 
     const homeBtn = document.getElementById("homeBtn");
     if (homeBtn) homeBtn.style.display = "flex";
+    const chatsBtn = document.getElementById("chatsBtn");
+    if (chatsBtn) chatsBtn.style.display = "flex";
+    const newChatBtn = document.getElementById("newChatBtn");
+    if (newChatBtn) newChatBtn.style.display = "flex";
 
     // Start a new chat session
     _currentChatId = genChatId();
@@ -903,6 +908,10 @@ export function resumeChat() {
   document.getElementById("chatScreen").style.display = "flex";
   const homeBtn = document.getElementById("homeBtn");
   if (homeBtn) homeBtn.style.display = "flex";
+  const chatsBtnR = document.getElementById("chatsBtn");
+  if (chatsBtnR) chatsBtnR.style.display = "flex";
+  const newChatBtnR = document.getElementById("newChatBtn");
+  if (newChatBtnR) newChatBtnR.style.display = "flex";
   const input = document.getElementById("msgInput");
   if (input) input.focus();
   if (_useCore) showCoreStats();
