@@ -573,29 +573,29 @@ const _bubbleState = new WeakMap();
 // _bubbleState stores: { lastText, mainSpan, thinkEl, thinkDone }
 
 function spawnParticles(el, chunkEl) {
-  // Tiny red particles at the position of the latest text chunk
-  const elRect   = el.getBoundingClientRect();
-  const srcRect  = (chunkEl || el).getBoundingClientRect();
-  const count = 2 + Math.floor(Math.random() * 3);
-  el.style.position = "relative";
-  const elOff = el.offsetTop || 0;
-  // Position relative to bubble container
-  const baseX = srcRect.left - elRect.left + srcRect.width * .5;
-  const baseY = srcRect.top  - elRect.top  + srcRect.height * .5;
+  // Particles fixed to the right-end of the latest typed text chunk
+  const srcRect = (chunkEl || el).getBoundingClientRect();
+  // Anchor: right edge of the chunk, vertically centered — this IS the text cursor
+  const anchorX = srcRect.right;
+  const anchorY = srcRect.top + srcRect.height * .5;
+  const count = 2 + Math.floor(Math.random() * 2);
   for (let i = 0; i < count; i++) {
     const p = document.createElement("span");
     p.className = "sparkle";
-    const angle = (Math.random() * Math.PI * 2);
-    const dist1 = 4  + Math.random() * 6;
-    const dist2 = 10 + Math.random() * 14;
+    // Burst mostly upward and to the right from the text cursor
+    const angle = -Math.PI * .5 + (Math.random() - .5) * Math.PI * 1.1;
+    const dist1 = 3 + Math.random() * 5;
+    const dist2 = 8 + Math.random() * 12;
     p.style.setProperty("--sx", Math.cos(angle) * dist1 + "px");
-    p.style.setProperty("--sy", Math.sin(angle) * dist1 - 4 + "px");
-    p.style.setProperty("--ex", Math.cos(angle) * dist2 + "px");
-    p.style.setProperty("--ey", Math.sin(angle) * dist2 - 8 + "px");
-    p.style.left = baseX + (Math.random() - .5) * 8 + "px";
-    p.style.top  = baseY + "px";
-    el.appendChild(p);
-    setTimeout(() => p.remove(), 600);
+    p.style.setProperty("--sy", Math.sin(angle) * dist1 + "px");
+    p.style.setProperty("--ex", Math.cos(angle) * dist2 + (Math.random()-.5)*6 + "px");
+    p.style.setProperty("--ey", Math.sin(angle) * dist2 + "px");
+    // Use fixed positioning so particles appear ON the text regardless of scroll/overflow
+    p.style.position = "fixed";
+    p.style.left = (anchorX + (Math.random() - .5) * 6) + "px";
+    p.style.top  = (anchorY + (Math.random() - .5) * 4) + "px";
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 650);
   }
 }
 
