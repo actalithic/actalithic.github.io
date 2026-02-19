@@ -1,209 +1,155 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0c0c10">
-<title>404 — LocalLLM by Actalithic</title>
+<title>404 — Actalithic</title>
 <link rel="icon" type="image/png" href="https://i.ibb.co/DfYLtMhQ/favicon.png">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;-webkit-text-size-adjust:100%}
-:root{
-  --bg:#0c0c10;--bg2:#14141a;--bg3:#1e1e26;
-  --border:#272730;--ink:#eeeef6;--ink2:#b8b8cc;--muted:#62627a;
-  --red:#e04535;--red-bg:#1a0c0c;--red-dim:#3a1010;
-}
 body{
-  background:var(--bg);color:var(--ink);
+  background:#b80000;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   min-height:100dvh;padding:2rem 1.5rem;
   font-family:'DM Mono',monospace;
   -webkit-font-smoothing:antialiased;
-  overflow:hidden;position:relative;
+  overflow:hidden;
+  position:relative;
 }
-.grid-bg{
-  position:fixed;inset:0;z-index:0;
-  background-image:linear-gradient(rgba(224,69,53,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(224,69,53,0.04) 1px,transparent 1px);
-  background-size:40px 40px;
-  mask-image:radial-gradient(ellipse 70% 70% at 50% 50%,black 0%,transparent 100%);
-  -webkit-mask-image:radial-gradient(ellipse 70% 70% at 50% 50%,black 0%,transparent 100%);
-  animation:gridPulse 6s ease-in-out infinite;
+
+/* Subtle noise/texture overlay */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity:.35;pointer-events:none;z-index:0;
 }
-@keyframes gridPulse{0%,100%{opacity:.45}50%{opacity:.9}}
-.orb{
-  position:fixed;width:600px;height:600px;border-radius:50%;
-  background:radial-gradient(circle,rgba(184,0,0,.18) 0%,rgba(184,0,0,.06) 40%,transparent 70%);
-  left:50%;top:50%;transform:translate(-50%,-50%);z-index:0;
-  animation:orbPulse 4s ease-in-out infinite;
+
+/* Vignette */
+body::after{
+  content:'';position:fixed;inset:0;
+  background:radial-gradient(ellipse 80% 80% at 50% 50%, transparent 40%, rgba(0,0,0,.35) 100%);
+  pointer-events:none;z-index:0;
 }
-@keyframes orbPulse{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:.8}50%{transform:translate(-50%,-50%) scale(1.12);opacity:1}}
+
 .content{
   position:relative;z-index:1;
   display:flex;flex-direction:column;align-items:center;text-align:center;
-  animation:pageIn .6s cubic-bezier(.34,1.2,.64,1) both;
 }
-@keyframes pageIn{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+
 .err-logo{
-  width:min(200px,52vw);margin-bottom:2.6rem;
-  filter:drop-shadow(0 0 28px rgba(224,69,53,.22));
-  animation:logoIn .6s .05s cubic-bezier(.34,1.2,.64,1) both;
+  width:min(320px,78vw);
+  margin-bottom:2.5rem;
+  filter:drop-shadow(0 4px 32px rgba(0,0,0,.4));
+  animation:fadeUp .5s cubic-bezier(.34,1.2,.64,1) both;
 }
-@keyframes logoIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
-.err-code-wrap{
-  position:relative;margin-bottom:.3rem;
-  animation:codeIn .65s .1s cubic-bezier(.34,1.2,.64,1) both;
+
+/* Subtle horizontal rule under logo */
+.err-divider{
+  width:min(120px,30vw);height:1px;
+  background:rgba(255,255,255,.2);
+  margin-bottom:2rem;
+  animation:fadeUp .5s .06s cubic-bezier(.34,1.2,.64,1) both;
 }
-@keyframes codeIn{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:none}}
+
 .err-code{
   font-family:'Syne',sans-serif;font-weight:800;
-  font-size:clamp(6rem,26vw,11rem);
-  letter-spacing:-.08em;line-height:1;
-  background:linear-gradient(135deg,#fff 0%,rgba(255,255,255,.5) 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  background-clip:text;position:relative;z-index:1;
+  font-size:clamp(5rem,22vw,9rem);
+  color:#fff;letter-spacing:-.06em;line-height:1;
+  text-shadow:0 4px 40px rgba(0,0,0,.3), 0 1px 0 rgba(255,255,255,.12);
+  animation:fadeUp .55s .08s cubic-bezier(.34,1.2,.64,1) both;
 }
-.err-glow{
-  position:absolute;inset:0;
-  font-family:'Syne',sans-serif;font-weight:800;
-  font-size:clamp(6rem,26vw,11rem);letter-spacing:-.08em;line-height:1;
-  color:var(--red);filter:blur(38px);opacity:.4;z-index:0;
-  pointer-events:none;user-select:none;
-}
-.err-badge{
-  display:inline-flex;align-items:center;gap:.45rem;
-  background:var(--red-bg);border:1px solid var(--red-dim);color:var(--red);
-  font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;
-  padding:.28rem .85rem;border-radius:20px;margin-bottom:1.4rem;
-  animation:fadeUp .5s .18s cubic-bezier(.34,1.2,.64,1) both;
-}
-@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.err-badge-dot{
-  width:6px;height:6px;border-radius:50%;background:var(--red);
-  animation:blink 1.8s ease-in-out infinite;
-}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
 .err-msg{
   font-family:'Syne',sans-serif;font-weight:700;
-  font-size:clamp(1.1rem,4vw,1.5rem);
-  color:var(--ink);letter-spacing:-.02em;margin-bottom:.5rem;
-  animation:fadeUp .5s .22s cubic-bezier(.34,1.2,.64,1) both;
+  font-size:clamp(1rem,4vw,1.45rem);
+  color:rgba(255,255,255,.88);
+  letter-spacing:-.015em;margin-top:.55rem;
+  animation:fadeUp .55s .16s cubic-bezier(.34,1.2,.64,1) both;
 }
+
 .err-sub{
-  font-size:.74rem;color:var(--muted);line-height:1.75;
-  max-width:300px;margin-bottom:2.5rem;
-  animation:fadeUp .5s .27s cubic-bezier(.34,1.2,.64,1) both;
+  font-size:.78rem;color:rgba(255,255,255,.45);
+  margin-top:.45rem;letter-spacing:.03em;
+  line-height:1.7;max-width:340px;
+  animation:fadeUp .55s .22s cubic-bezier(.34,1.2,.64,1) both;
 }
+
+/* Action buttons */
 .err-actions{
-  display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.6rem;
-  animation:fadeUp .5s .33s cubic-bezier(.34,1.2,.64,1) both;
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
+  gap:.55rem;margin-top:2.2rem;
+  animation:fadeUp .55s .3s cubic-bezier(.34,1.2,.64,1) both;
 }
-.err-btn-primary{
-  display:inline-flex;align-items:center;gap:.5rem;
-  font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;
-  padding:.8rem 2rem;border-radius:6px;
-  background:var(--ink);color:var(--bg);
-  text-decoration:none;letter-spacing:.03em;
-  border:1.5px solid var(--ink);
-  transition:all .18s;
-  box-shadow:0 4px 24px rgba(0,0,0,.4);
+
+.err-btn{
+  display:inline-flex;align-items:center;gap:.55rem;
+  font-family:'Syne',sans-serif;font-weight:700;font-size:.88rem;
+  padding:.85rem 2.2rem;border-radius:6px;
+  background:rgba(255,255,255,.15);
+  border:1.5px solid rgba(255,255,255,.35);
+  color:#fff;text-decoration:none;
+  transition:all .18s;letter-spacing:.04em;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   white-space:nowrap;
 }
-.err-btn-primary:hover{background:var(--ink2);border-color:var(--ink2);transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,0,0,.5)}
-.err-btn-primary:active{transform:translateY(0)}
-.err-btn-secondary{
-  display:inline-flex;align-items:center;gap:.45rem;
-  font-family:'DM Mono',monospace;font-size:.7rem;
+.err-btn:hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.6);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.err-btn:active{transform:translateY(0)}
+
+.err-btn-ghost{
+  display:inline-flex;align-items:center;gap:.4rem;
+  font-family:'DM Mono',monospace;font-size:.72rem;
   padding:.75rem 1.4rem;border-radius:6px;
-  background:transparent;color:var(--muted);
-  text-decoration:none;letter-spacing:.04em;
-  border:1.5px solid var(--border);
-  transition:all .18s;white-space:nowrap;
+  background:transparent;
+  border:1.5px solid rgba(255,255,255,.18);
+  color:rgba(255,255,255,.5);text-decoration:none;
+  transition:all .18s;letter-spacing:.04em;
+  white-space:nowrap;
 }
-.err-btn-secondary:hover{border-color:var(--ink2);color:var(--ink);background:var(--bg2);transform:translateY(-2px)}
-.err-btn-secondary:active{transform:translateY(0)}
-.err-footer{
-  position:fixed;bottom:1.4rem;left:0;right:0;
-  text-align:center;z-index:1;
-  font-size:.56rem;color:var(--muted);letter-spacing:.08em;
-  animation:fadeUp .5s .4s cubic-bezier(.34,1.2,.64,1) both;
+.err-btn-ghost:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.35);color:rgba(255,255,255,.8);transform:translateY(-2px)}
+.err-btn-ghost:active{transform:translateY(0)}
+
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(18px)}
+  to{opacity:1;transform:none}
 }
-.particle{
-  position:fixed;border-radius:50%;
-  background:var(--red);pointer-events:none;z-index:0;
-  box-shadow:0 0 6px 2px rgba(224,69,53,.35);
-}
+
 @media(max-width:480px){
   .err-logo{margin-bottom:2rem}
-  .err-sub{font-size:.7rem}
-  .err-btn-primary{font-size:.8rem;padding:.75rem 1.5rem}
-  .err-btn-secondary{font-size:.67rem;padding:.68rem 1.1rem}
+  .err-btn{font-size:.82rem;padding:.78rem 1.7rem}
+  .err-btn-ghost{font-size:.67rem;padding:.68rem 1.1rem}
 }
 </style>
 </head>
 <body>
-<div class="grid-bg"></div>
-<div class="orb"></div>
-
-<div class="content">
-  <img class="err-logo"
-    src="https://i.ibb.co/tpSTrg7Z/whitelogo.png"
-    alt="LocalLLM by Actalithic"
-    onerror="this.style.opacity='.25'"
-  >
-
-  <div class="err-badge">
-    <span class="err-badge-dot"></span>
-    Page not found
-  </div>
-
-  <div class="err-code-wrap">
+  <div class="content">
+    <img class="err-logo"
+      src="https://i.ibb.co/tpSTrg7Z/whitelogo.png"
+      alt="Actalithic"
+      onerror="this.style.opacity='.4'"
+    >
+    <div class="err-divider"></div>
     <div class="err-code">404</div>
-    <div class="err-glow" aria-hidden="true">404</div>
+    <div class="err-msg">Page not found</div>
+    <div class="err-sub">The page you're looking for doesn't exist or has been moved.</div>
+    <div class="err-actions">
+      <a class="err-btn" href="/index.html">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Back to LocalLLM
+      </a>
+      <a class="err-btn-ghost" href="javascript:history.back()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Go back
+      </a>
+    </div>
   </div>
 
-  <div class="err-msg">Lost in the void.</div>
-  <div class="err-sub">This page doesn't exist, has moved, or was never downloaded to your device.</div>
-
-  <div class="err-actions">
-    <a class="err-btn-primary" href="/index.html">
-      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      Back to LocalLLM
-    </a>
-    <a class="err-btn-secondary" href="javascript:history.back()">
-      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      Go back
-    </a>
-  </div>
-</div>
-
-<div class="err-footer">LocalLLM by Actalithic &nbsp;·&nbsp; 100% local AI in your browser</div>
-
-<script>
-(function(){
-  // Floating particles
-  for(var i=0;i<22;i++){
-    (function(idx){
-      setTimeout(function(){
-        var p=document.createElement('div');
-        p.className='particle';
-        var x=Math.random()*100, y=Math.random()*100;
-        var dur=6+Math.random()*10, del=Math.random()*3;
-        var sz=1.5+Math.random()*2.5;
-        var dx=(Math.random()-.5)*140, dy=(Math.random()-.5)*90;
-        p.style.cssText='left:'+x+'vw;top:'+y+'vh;width:'+sz+'px;height:'+sz+'px;opacity:'+(0.15+Math.random()*.45)+';animation:pf'+idx+' '+dur+'s '+del+'s ease-in-out infinite alternate;';
-        var s=document.createElement('style');
-        s.textContent='@keyframes pf'+idx+'{from{transform:translate(0,0) scale(1)}to{transform:translate('+dx+'px,'+dy+'px) scale('+(0.3+Math.random()*.9)+')}}';
-        document.head.appendChild(s);
-        document.body.appendChild(p);
-      },idx*60);
-    })(i);
-  }
-  // Preload
-  ['https://i.ibb.co/tpSTrg7Z/whitelogo.png','https://i.ibb.co/DfYLtMhQ/favicon.png']
-    .forEach(function(src){var i=new Image();i.src=src;});
-})();
-</script>
+  <script>
+  (function(){
+    var img = new Image(); img.src = 'https://i.ibb.co/tpSTrg7Z/whitelogo.png';
+    var fav = new Image(); fav.src = 'https://i.ibb.co/DfYLtMhQ/favicon.png';
+  })();
+  </script>
 </body>
 </html>

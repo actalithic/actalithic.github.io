@@ -645,10 +645,10 @@ function renderBubble(el, rawText) {
     // Streaming inside think block — update or create live think block
     if (!state.thinkEl) {
       const tb = document.createElement("div"); tb.className = "think-block";
-      tb.innerHTML = \`<div class="think-header">
+      tb.innerHTML = `<div class="think-header">
         <span class="material-icons-round think-icon" style="animation:spin 1s linear infinite">sync</span>
         <span class="think-label">Thinking…</span>
-      </div><div class="think-content"></div>\`;
+      </div><div class="think-content"></div>`;
       el.appendChild(tb);
       state.thinkEl = tb;
     }
@@ -665,12 +665,12 @@ function renderBubble(el, rawText) {
     const thinkText = firstThink[1].trim();
     const wordCount = thinkText.split(/\s+/).filter(Boolean).length;
     const tb = document.createElement("div"); tb.className = "think-block collapsed";
-    tb.innerHTML = \`<div class="think-header" onclick="this.parentElement.classList.toggle('collapsed')">
+    tb.innerHTML = `<div class="think-header" onclick="this.parentElement.classList.toggle('collapsed')">
       <span class="material-icons-round think-icon">psychology</span>
       <span class="think-label">Thinking</span>
       <span class="think-label-sub">\${wordCount} words</span>
       <span class="material-icons-round think-chevron">expand_more</span>
-    </div><div class="think-content"></div>\`;
+    </div><div class="think-content"></div>`;
     tb.querySelector(".think-content").textContent = thinkText;
     el.insertBefore(tb, el.firstChild);
     state.thinkDone = true;
