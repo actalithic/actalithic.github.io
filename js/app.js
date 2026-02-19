@@ -38,7 +38,7 @@ let _stopRequested = false;
 
 // ── Render throttle (perf) ────────────────────────────────
 // Batch DOM writes every RENDER_INTERVAL_MS — keeps GPU thread hot
-const RENDER_INTERVAL_MS = 80; // ~12 fps for text; GPU does the real work
+const RENDER_INTERVAL_MS = 60; // ~16 fps for text streaming; keeps GPU hot
 let _renderTimer = null;
 let _pendingText = "";
 let _pendingEl   = null;
@@ -513,8 +513,7 @@ export async function loadModel() {
     if (badge) badge.className = "model-badge loaded";
     const badgeTxt = document.getElementById("modelBadgeText");
     if (badgeTxt) badgeTxt.textContent = m?.name || "loaded";
-    const infoBtn = document.getElementById("modelInfoBtn");
-    if (infoBtn) infoBtn.style.display = "flex";
+
     const homeBtn = document.getElementById("homeBtn");
     if (homeBtn) homeBtn.style.display = "flex";
 
@@ -614,7 +613,16 @@ function renderBubble(el, rawText) {
 
   // ── Full rebuild only on first render or history load ──
   if (!state) {
-    el.innerHTML = "";
+    // Smooth transition: fade out typing dots before clearing, avoids blank frame blink
+    const dots = el.querySelector('.typing-dots');
+    if (dots) {
+      dots.style.transition = 'opacity .18s';
+      dots.style.opacity = '0';
+      // Clear after fade
+      setTimeout(() => { if (el.contains(dots)) el.innerHTML = ""; }, 170);
+    } else {
+      el.innerHTML = "";
+    }
     state = { lastText: "", mainSpan: null, thinkEl: null, thinkDone: false };
     _bubbleState.set(el, state);
   }
@@ -684,12 +692,13 @@ function renderBubble(el, rawText) {
     chunk.className = "text-chunk";
     chunk.style.whiteSpace = "pre-wrap";
     chunk.textContent = delta;
-    // Stagger delay so rapid chunks don't all fade at once
-    chunk.style.animationDelay = "0ms";
+    // Small cascade stagger so rapid batches flow in smoothly
+    const chunkCount = state.mainSpan.children.length;
+    chunk.style.animationDelay = Math.min(chunkCount * 8, 40) + "ms";
     state.mainSpan.appendChild(chunk);
 
-    // Particle burst — small chance per chunk, at text end position
-    if (delta.length >= 2 && Math.random() < .45) {
+    // Subtle red particle burst at latest text position
+    if (delta.length >= 3 && Math.random() < .30) {
       requestAnimationFrame(() => spawnParticles(el, chunk));
     }
   } else {
@@ -1031,8 +1040,6 @@ export async function switchModel(modelId) {
   if (msw) { msw.style.opacity = "1"; msw.style.pointerEvents = ""; }
   const sub = document.getElementById("loadSub");
   if (sub) { sub.innerHTML = "Runs entirely in your browser via WebGPU. First download is cached — subsequent loads are instant."; sub.style.color = ""; }
-  const infoBtn = document.getElementById("modelInfoBtn");
-  if (infoBtn) infoBtn.style.display = "none";
   const homeBtn = document.getElementById("homeBtn");
   if (homeBtn) homeBtn.style.display = "none";
   const cached = await getCachedModelIds();
@@ -1444,8 +1451,7 @@ export async function confirmRefreshCache() {
   if (badge) badge.textContent = 'no model';
   const homeBtn = document.getElementById('homeBtn');
   if (homeBtn) homeBtn.style.display = 'none';
-  const infoBtn = document.getElementById('modelInfoBtn');
-  if (infoBtn) infoBtn.style.display = 'none';
+
 
   // Reload so the newly unregistered SW re-registers and fetches fresh assets
   setTimeout(() => location.reload(), 400);
