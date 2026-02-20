@@ -642,8 +642,8 @@ function renderBubble(el, rawText) {
     // ── Word-burst animation ──
     // Split delta into tokens: words + their trailing whitespace/newlines
     // Each token gets its own span with a staggered animation delay
-    const WORD_STAGGER_MS = 38;   // gap between each word appearing
-    const WORD_FADE_MS    = 160;  // how long each word's fade lasts
+    const WORD_STAGGER_MS = 55;   // gap between each word appearing
+    const WORD_FADE_MS    = 280;  // how long each word's fade lasts
 
     // Tokenize: split on whitespace boundaries but keep the whitespace attached
     const tokens = delta.match(/\S+\s*/g) || [delta];
@@ -853,6 +853,9 @@ export async function sendMessage() {
 export async function goHome() {
   document.getElementById("chatScreen").style.display = "none";
   document.getElementById("loadScreen").style.display = "flex";
+  // Always restore picker interactivity when returning home
+  const mswHome = document.getElementById("modelSelectWrap");
+  if (mswHome) { mswHome.style.opacity = "1"; mswHome.style.pointerEvents = ""; }
   const homeBtn = document.getElementById("homeBtn");
   if (homeBtn) homeBtn.style.display = "none";
   const chatsBtn2 = document.getElementById("chatsBtn");
