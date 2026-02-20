@@ -182,8 +182,8 @@ header{
   .modal-section-label{border-radius:0;}
 }
 .modal-section-label{
-  font-size:.55rem;letter-spacing:.15em;text-transform:uppercase;
-  color:var(--muted);padding:.7rem 1rem .35rem;
+  font-size:.62rem;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted);padding:.75rem 1rem .4rem;
   background:var(--bg2);border-top:1px solid var(--border);
   position:sticky;top:0;z-index:1;
 }
@@ -515,17 +515,20 @@ textarea#msgInput::placeholder{color:var(--muted)}
 ════════════════════════════════════════════════════════ */
 @media(max-width:480px){
 
+  /* ── Prevent iOS auto-zoom on inputs ── */
+  html { font-size: 16px; }
+
   /* ── Header ── */
   header{
-    padding:.6rem 1rem;
-    gap:.5rem;
+    padding:.7rem 1rem;
+    gap:.55rem;
   }
-  .header-brand img.logo-img{height:28px}
-  .icon-btn{width:34px;height:34px}
-  .icon-btn .material-icons-round{font-size:16px}
+  .header-brand img.logo-img{height:30px}
+  .icon-btn{width:36px;height:36px}
+  .icon-btn .material-icons-round{font-size:17px}
   .model-badge{
-    max-width:100px;font-size:.58rem;
-    padding:4px 10px;gap:5px;
+    max-width:120px;font-size:.7rem;
+    padding:5px 10px;gap:5px;
   }
 
   /* ── Load screen outer shell ── */
@@ -552,12 +555,13 @@ textarea#msgInput::placeholder{color:var(--muted)}
     flex-direction:column;
     align-items:center;
     text-align:center;
-    gap:1.6rem;
-    padding:2rem 1.25rem 1.5rem;
+    gap:2rem;
+    padding:2.25rem 1.5rem 2rem;
     background:var(--bg);
     border-bottom:1px solid var(--border);
     order:1;
     width:100%;
+    overflow:visible;
   }
 
   /* ── Left col (engine options) — shown second ── */
@@ -565,8 +569,8 @@ textarea#msgInput::placeholder{color:var(--muted)}
     display:flex;
     flex-direction:column;
     align-items:stretch;
-    gap:1.4rem;
-    padding:1.75rem 1.25rem 2rem;
+    gap:1.75rem;
+    padding:2rem 1.5rem 2.5rem;
     background:var(--bg2);
     order:2;
     width:100%;
@@ -574,11 +578,11 @@ textarea#msgInput::placeholder{color:var(--muted)}
 
   /* ── Logo ── */
   .load-logo-wrap{justify-content:center;width:100%}
-  .load-logo-img{height:80px;width:auto}
+  .load-logo-img{height:100px;width:auto}
 
   /* ── "LocalLLM" hero title ── */
   .hero-brand-text{
-    font-size:3rem;
+    font-size:3.2rem;
     letter-spacing:-.06em;
     justify-content:center;
     width:100%;
@@ -587,21 +591,23 @@ textarea#msgInput::placeholder{color:var(--muted)}
 
   /* ── Tagline block ── */
   .load-hero{
-    gap:.6rem;
+    gap:.8rem;
     align-items:center;
     text-align:center;
     width:100%;
     max-width:100%;
     margin:0;
   }
-  .load-title{font-size:.95rem;letter-spacing:-.01em}
+  .load-title{font-size:1rem;letter-spacing:-.01em}
   .load-sub{
-    font-size:.76rem;line-height:1.85;
+    font-size:.82rem;line-height:1.9;
     max-width:100%;margin:0;
   }
 
   /* ── Progress bar ── */
   .progress-wrap{max-width:100%;width:100%}
+  .progress-status{font-size:.72rem}
+  .progress-label{font-size:.75rem}
 
   /* ── Model picker card ── */
   .model-select-card{
@@ -609,50 +615,50 @@ textarea#msgInput::placeholder{color:var(--muted)}
     border-radius:12px;
   }
   .model-picker-btn{
-    padding:.9rem 2.8rem .9rem 1rem;
-    font-size:.88rem;
-    min-height:52px;
+    padding:1rem 2.8rem 1rem 1.1rem;
+    font-size:.95rem;
+    min-height:56px;
   }
   .model-info-row{
-    padding:.6rem 1rem;
-    gap:.45rem;
-    font-size:.62rem;
+    padding:.7rem 1.1rem;
+    gap:.55rem;
+    font-size:.72rem;
     flex-wrap:wrap;
   }
 
   /* ── Download button ── */
   .load-btn{
     width:100%;max-width:100%;
-    font-size:.9rem;
-    padding:1rem 1.5rem;
+    font-size:.95rem;
+    padding:1.1rem 1.5rem;
     border-radius:0;
-    min-height:54px;
+    min-height:58px;
     margin-top:0;
   }
 
   /* ── Left col title ── */
   .load-col-title{
-    font-size:.62rem;letter-spacing:.14em;
-    margin-bottom:-.2rem;
+    font-size:.72rem;letter-spacing:.12em;
+    margin-bottom:0;
   }
 
   /* ── Engine toggle rows ── */
-  .toggle-section{gap:.9rem;width:100%}
+  .toggle-section{gap:1rem;width:100%}
   .exp-row{
-    padding:1.1rem 1.1rem;
+    padding:1.25rem 1.2rem;
     gap:1rem;
     border-radius:10px;
     align-items:flex-start;
   }
   .exp-label-title{
-    font-size:.82rem;
-    gap:.45rem;
+    font-size:.9rem;
+    gap:.5rem;
     line-height:1.5;
   }
   .exp-label-sub{
-    font-size:.7rem;
-    margin-top:6px;
-    line-height:1.7;
+    font-size:.78rem;
+    margin-top:8px;
+    line-height:1.75;
   }
   /* Move toggle to top-right */
   .toggle{flex-shrink:0;align-self:flex-start;margin-top:2px}
@@ -660,48 +666,48 @@ textarea#msgInput::placeholder{color:var(--muted)}
   /* ── Speed table ── */
   .speed-table{width:100%;border-radius:12px}
   .speed-table-head{
-    padding:.65rem 1.1rem;
-    font-size:.6rem;
+    padding:.75rem 1.1rem;
+    font-size:.7rem;
   }
-  .speed-row{padding:.65rem 1.1rem}
-  .speed-device{font-size:.68rem}
-  .speed-val{font-size:.65rem}
+  .speed-row{padding:.75rem 1.1rem}
+  .speed-device{font-size:.8rem}
+  .speed-val{font-size:.78rem}
 
   /* ── Disclaimer ── */
   .disclaimer-note{
-    font-size:.68rem;
-    padding:1rem 1.1rem;
+    font-size:.76rem;
+    padding:1.1rem 1.2rem;
     border-radius:12px;
-    gap:.7rem;
-    line-height:1.75;
+    gap:.75rem;
+    line-height:1.8;
   }
 
   /* ── Mobile warning banner ── */
   .mobile-banner{
-    padding:.75rem 1.25rem;
-    font-size:.74rem;
-    gap:.65rem;
-    line-height:1.6;
+    padding:.85rem 1.5rem;
+    font-size:.8rem;
+    gap:.7rem;
+    line-height:1.65;
   }
 
   /* ══ CHAT SCREEN ══ */
 
   /* ── Messages area ── */
   .messages{
-    padding:1.25rem 1rem 1rem;
-    gap:1.25rem;
+    padding:1.5rem 1rem 1rem;
+    gap:1.5rem;
   }
 
   /* ── Message rows ── */
-  .msg-row{gap:.6rem}
-  .avatar{width:28px;height:28px;min-width:28px}
+  .msg-row{gap:.75rem}
+  .avatar{width:30px;height:30px;min-width:30px}
   .msg-col{max-width:84%}
-  .msg-sender{font-size:.56rem;margin-bottom:1px}
+  .msg-sender{font-size:.65rem;margin-bottom:2px}
 
   /* ── Bubbles ── */
   .bubble{
-    font-size:.9rem;
-    padding:.8rem 1rem;
+    font-size:.95rem;
+    padding:.9rem 1.1rem;
     line-height:1.85;
     border-radius:3px 14px 14px 14px;
   }
@@ -710,52 +716,56 @@ textarea#msgInput::placeholder{color:var(--muted)}
   }
 
   /* ── Think block ── */
-  .think-header{padding:.55rem .9rem}
-  .think-content{font-size:.75rem;padding:.5rem .8rem .6rem}
+  .think-header{padding:.65rem 1rem}
+  .think-label{font-size:.68rem}
+  .think-content{font-size:.8rem;padding:.6rem .9rem .7rem}
 
   /* ── Input bar ── */
   .bottom-area{
     padding-bottom:env(safe-area-inset-bottom, 8px);
   }
   .input-bar{
-    padding:.65rem 1rem .75rem;
-    gap:.55rem;
+    padding:.75rem 1rem .85rem;
+    gap:.6rem;
     align-items:flex-end;
   }
   textarea#msgInput{
     font-size:16px;
-    padding:.7rem .95rem;
+    padding:.8rem 1rem;
     border-radius:14px;
-    min-height:50px;
-    line-height:1.55;
+    min-height:52px;
+    line-height:1.6;
   }
   .send-btn{
-    width:46px;height:46px;min-width:46px;
+    width:48px;height:48px;min-width:48px;
     border-radius:0;
     flex-shrink:0;
   }
   .stop-btn{
-    width:42px;height:42px;border-radius:0;
+    width:44px;height:44px;border-radius:0;
     flex-shrink:0;
   }
 
   /* ── Info bar ── */
   .info-bar{
-    font-size:.55rem;
-    padding:.1rem 1rem .55rem;
+    font-size:.65rem;
+    padding:.15rem 1rem .6rem;
     letter-spacing:.04em;
   }
 
   /* ── Core stats bar ── */
-  .core-stats-bar{padding:.45rem 1rem .4rem}
-  .core-stats-header{font-size:.6rem}
-  .core-split-val{font-size:.56rem;min-width:70px}
+  .core-stats-bar{padding:.55rem 1rem .5rem}
+  .core-stats-header{font-size:.68rem}
+  .core-split-label{font-size:.68rem}
+  .core-split-val{font-size:.66rem;min-width:80px}
 
   /* ── Chat sidebar ── */
   .chat-sidebar{width:100%;max-width:100%}
-  .chat-sidebar-head{padding:.85rem 1rem}
-  .chat-list-item{padding:.75rem 1rem}
-  .chat-list-title{font-size:.8rem}
+  .chat-sidebar-head{padding:.95rem 1rem}
+  .chat-sidebar-title{font-size:1.05rem}
+  .chat-list-item{padding:.85rem 1rem}
+  .chat-list-title{font-size:.86rem}
+  .chat-list-meta{font-size:.68rem}
 }
 @media(min-width:600px){
   header{padding:.75rem 1.5rem;gap:.8rem}
@@ -950,8 +960,8 @@ header .logo-img { /* sizes set by responsive rules above */ }
 }
 
 .picker-group-label{
-  font-size:.55rem;letter-spacing:.15em;text-transform:uppercase;
-  color:var(--muted);padding:.7rem 1rem .35rem;
+  font-size:.62rem;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted);padding:.75rem 1rem .4rem;
   background:var(--bg2);border-top:1px solid var(--border);
   position:sticky;top:0;z-index:1;
 }
