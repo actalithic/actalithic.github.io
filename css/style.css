@@ -440,8 +440,8 @@ header{
 .messages{flex:1;overflow-y:auto;padding:1.25rem 1rem 1rem;display:flex;flex-direction:column;gap:1.1rem;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .messages::-webkit-scrollbar{width:3px}
 .messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-.msg-row{display:flex;gap:.7rem;animation:msgIn .2s ease}
-@keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.msg-row{display:flex;gap:.7rem;animation:msgIn .45s cubic-bezier(.16,.84,.44,1)}
+@keyframes msgIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .msg-row.user{flex-direction:row-reverse}
 .avatar{width:30px;height:30px;min-width:30px;border-radius:50%;flex-shrink:0;margin-top:2px;overflow:hidden;border:1px solid var(--border)}
 .avatar img{width:100%;height:100%;object-fit:cover}
@@ -479,7 +479,7 @@ header{
    BOTTOM AREA
 ════════════════════════════════════════════════════════ */
 .bottom-area{border-top:1px solid var(--border);background:var(--bg);padding-bottom:env(safe-area-inset-bottom,0px);transition:background .2s,border-color .2s;flex-shrink:0}
-.core-stats-bar{background:var(--purple-bg);border-bottom:1px solid var(--purple-dim);padding:.5rem 1rem .4rem;display:flex;flex-direction:column;gap:.28rem;font-family:'DM Mono',monospace}
+.core-stats-bar{background:var(--purple-bg);border-bottom:1px solid var(--purple-dim);padding:.35rem 1rem;display:flex;flex-direction:column;gap:.28rem;font-family:'DM Mono',monospace}
 .core-stats-header{display:flex;align-items:center;gap:.4rem;font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--purple);margin-bottom:.05rem}
 .core-split-row{display:flex;align-items:center;gap:.5rem}
 .core-split-label{color:var(--muted);width:60px;flex-shrink:0;font-size:.58rem}
@@ -509,25 +509,40 @@ textarea#msgInput::placeholder{color:var(--muted)}
   .icon-btn{width:30px;height:30px}
   .icon-btn .material-icons-round{font-size:15px}
   .model-badge{max-width:80px;font-size:.56rem;padding:3px 8px}
-  #loadScreen{padding:1.5rem .85rem 4rem;gap:1.1rem}
-  .load-logo-img{height:min(140px,38vw)}
-  .hero-brand-text{font-size:clamp(2rem,16vw,3.2rem)}
-  .load-title{font-size:.88rem}
-  .load-sub{font-size:.72rem}
-  .speed-device{font-size:.61rem}
-  .speed-val{font-size:.57rem}
-  .exp-label-title{font-size:.7rem}
-  .exp-label-sub{font-size:.58rem}
-  .load-btn{font-size:.84rem;padding:.85rem 2rem;margin-top:.6rem}
-  .disclaimer-note{font-size:.61rem}
-  .messages{padding:1rem .85rem .85rem;gap:.9rem}
-  .msg-col{max-width:86%}
-  .bubble{font-size:.86rem;padding:.68rem .9rem}
-  .input-bar{padding:.5rem .85rem .6rem;gap:.4rem}
-  textarea#msgInput{font-size:16px;padding:.6rem .85rem}
-  .send-btn{width:42px;height:42px;min-width:42px}
-  .info-bar{font-size:.53rem;padding:0 .85rem .45rem}
-  .core-stats-bar{padding:.45rem .85rem .38rem}
+  /* Load screen — more breathing room between every element */
+  #loadScreen{padding:1.2rem .9rem 5rem;gap:0}
+  .load-desktop-cols{gap:0;padding:0 .1rem}
+  .load-col-right{gap:1.4rem;padding:1rem 0 .5rem}
+  .load-col-left{gap:1.2rem;padding:.5rem 0 1rem}
+  .load-logo-img{height:min(110px,32vw);margin-bottom:.2rem}
+  .hero-brand-text{font-size:clamp(2.2rem,17vw,3.4rem);margin-bottom:.1rem}
+  .load-hero{gap:.55rem;margin-bottom:.2rem}
+  .load-title{font-size:.9rem}
+  .load-sub{font-size:.73rem;line-height:1.8}
+  .model-select-card{border-radius:10px}
+  .load-btn{font-size:.86rem;padding:.92rem 2rem;margin-top:.9rem;border-radius:8px}
+  /* Engine options — more readable */
+  .toggle-section{gap:.75rem}
+  .exp-row{padding:1rem 1.1rem;gap:.9rem;border-radius:8px}
+  .exp-label-title{font-size:.78rem;gap:.4rem}
+  .exp-label-sub{font-size:.67rem;margin-top:5px;line-height:1.65}
+  /* Speed table */
+  .speed-table{border-radius:10px}
+  .speed-table-head{padding:.55rem 1rem}
+  .speed-row{padding:.6rem 1rem}
+  .speed-device{font-size:.65rem}
+  .speed-val{font-size:.62rem}
+  /* Disclaimer */
+  .disclaimer-note{font-size:.65rem;padding:.85rem 1rem;border-radius:10px}
+  /* Chat screen */
+  .messages{padding:1rem .9rem 1rem;gap:1rem}
+  .msg-col{max-width:87%}
+  .bubble{font-size:.88rem;padding:.75rem .95rem;line-height:1.85}
+  .input-bar{padding:.55rem .9rem .65rem;gap:.45rem}
+  textarea#msgInput{font-size:16px;padding:.65rem .9rem;border-radius:12px}
+  .send-btn{width:44px;height:44px;min-width:44px;border-radius:12px}
+  .info-bar{font-size:.54rem;padding:0 .9rem .5rem}
+  .core-stats-bar{padding:.4rem .9rem}
   .core-split-val{min-width:80px;font-size:.54rem}
 }
 @media(min-width:600px){
@@ -1074,7 +1089,7 @@ header .logo-img { /* sizes set by responsive rules above */ }
 }
 
 /* ── Streaming text fade-in (no blink, incremental) ── */
-.text-chunk{opacity:0;animation:chunkFade .9s cubic-bezier(.16,.84,.44,1) forwards}
+.text-chunk{opacity:0;animation:chunkFade 1.1s cubic-bezier(.16,.84,.44,1) forwards}
 @keyframes chunkFade{
   0%   {opacity:0;transform:translateY(2px)}
   20%  {opacity:.15}
@@ -1082,21 +1097,7 @@ header .logo-img { /* sizes set by responsive rules above */ }
   100% {opacity:1;transform:translateY(0)}
 }
 
-/* ── Red sparkle particles ── */
-.sparkle{
-  width:2.5px;height:2.5px;
-  border-radius:50%;
-  background:#b80000;
-  pointer-events:none;
-  z-index:9999;
-  box-shadow:0 0 5px 1px rgba(184,0,0,.6);
-  animation:sparkleFly .6s cubic-bezier(.16,1,.3,1) forwards;
-}
-@keyframes sparkleFly{
-  0%  {opacity:1;transform:translate(0,0) scale(1.4)}
-  40% {opacity:.8;transform:translate(var(--sx),var(--sy)) scale(.9)}
-  100%{opacity:0;transform:translate(var(--ex),var(--ey)) scale(.1)}
-}
+
 
 /* ── Mobile explicit resets to prevent desktop CSS bleed ── */
 @media(max-width: 899px) {

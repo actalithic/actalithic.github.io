@@ -38,7 +38,7 @@ let _stopRequested = false;
 
 // ── Render throttle (perf) ────────────────────────────────
 // Batch DOM writes every RENDER_INTERVAL_MS — keeps GPU thread hot
-const RENDER_INTERVAL_MS = 60; // ~16 fps for text streaming; keeps GPU hot
+const RENDER_INTERVAL_MS = 120; // batch renders → less DOM thrash, GPU stays hot
 let _renderTimer = null;
 let _pendingText = "";
 let _pendingEl   = null;
@@ -395,24 +395,9 @@ function showCoreStats() {
   const bar = document.getElementById("coreStatsBar");
   if (!bar) return;
   bar.style.display = "flex";
-  const m = MODELS.find(x => x.id === activeModelId);
-  const totalRam = m ? parseFloat(m.ram.replace(/[^0-9.]/g, "")) || 5 : 5;
-  const gpuAvail = 4;
-  const gpuGB = Math.min(totalRam, gpuAvail);
-  const cpuGB = Math.max(0, totalRam - gpuGB);
-  const gpuPct = Math.round((gpuGB / totalRam) * 100);
-  const cpuPct = 100 - gpuPct;
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  set("coreGpuPct", gpuPct + "% GPU");
-  set("coreCpuPct", cpuPct + "% CPU");
-  set("coreGpuRam", gpuGB.toFixed(1) + " GB on GPU");
-  set("coreCpuRam", cpuGB.toFixed(1) + " GB offloaded to CPU");
-  set("coreSaved",  cpuGB.toFixed(1) + " GB VRAM freed");
-  set("coreTokSpeed", "");  // will be updated live
-  setTimeout(() => {
-    const g = document.getElementById("coreGpuBar"); if (g) g.style.width = gpuPct + "%";
-    const c = document.getElementById("coreCpuBar"); if (c) c.style.width = cpuPct + "%";
-  }, 80);
+  // Just show the header with live tok/s — rows hidden, simple label only
+  const splitRows = bar.querySelectorAll(".core-split-row");
+  splitRows.forEach(r => r.style.display = "none");
 }
 function hideCoreStats() {
   const bar = document.getElementById("coreStatsBar");
@@ -449,6 +434,9 @@ export async function loadModel() {
   // Remove any lingering spinner
   const spnr = document.getElementById('spinner'); if (spnr) spnr.style.display = 'none';
 
+  // Hide pause banner when loading a new model
+  const _pb = document.getElementById("pausedBanner");
+  if (_pb) _pb.style.display = "none";
   if (engine) {
     try { await engine.unload(); } catch (e) {}
     if (engine._worker) { try { engine._worker.terminate(); } catch(e) {} }
@@ -572,32 +560,6 @@ function addWelcome(model, useCore, useCPU) {
 const _bubbleState = new WeakMap();
 // _bubbleState stores: { lastText, mainSpan, thinkEl, thinkDone }
 
-function spawnParticles(el, chunkEl) {
-  // Particles fixed to the right-end of the latest typed text chunk
-  const srcRect = (chunkEl || el).getBoundingClientRect();
-  // Anchor: right edge of the chunk, vertically centered — this IS the text cursor
-  const anchorX = srcRect.right;
-  const anchorY = srcRect.top + srcRect.height * .5;
-  const count = 2 + Math.floor(Math.random() * 2);
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement("span");
-    p.className = "sparkle";
-    // Burst mostly upward and to the right from the text cursor
-    const angle = -Math.PI * .5 + (Math.random() - .5) * Math.PI * 1.1;
-    const dist1 = 3 + Math.random() * 5;
-    const dist2 = 8 + Math.random() * 12;
-    p.style.setProperty("--sx", Math.cos(angle) * dist1 + "px");
-    p.style.setProperty("--sy", Math.sin(angle) * dist1 + "px");
-    p.style.setProperty("--ex", Math.cos(angle) * dist2 + (Math.random()-.5)*6 + "px");
-    p.style.setProperty("--ey", Math.sin(angle) * dist2 + "px");
-    // Use fixed positioning so particles appear ON the text regardless of scroll/overflow
-    p.style.position = "fixed";
-    p.style.left = (anchorX + (Math.random() - .5) * 6) + "px";
-    p.style.top  = (anchorY + (Math.random() - .5) * 4) + "px";
-    document.body.appendChild(p);
-    setTimeout(() => p.remove(), 650);
-  }
-}
 
 function cleanText(text) {
   return text
@@ -702,10 +664,7 @@ function renderBubble(el, rawText) {
     chunk.style.animationDelay = Math.min(chunkCount * 8, 40) + "ms";
     state.mainSpan.appendChild(chunk);
 
-    // Subtle red particle burst at latest text position
-    if (delta.length >= 3 && Math.random() < .30) {
-      requestAnimationFrame(() => spawnParticles(el, chunk));
-    }
+
   } else {
     // Static render (history, final clean-up)
     state.mainSpan.textContent = mainText;
@@ -807,20 +766,23 @@ export async function sendMessage() {
 
     await acquireWakeLock();
     let tokenBatch = 0;
+    const BUFFER_DELAY_MS = 220; // collect tokens silently before first paint
+    let streamStartTime = null;
     for await (const chunk of stream) {
       if (_stopRequested) break;
       const delta = chunk.choices[0]?.delta?.content || "";
       if (delta) {
         if (!first) {
-          // Remove typing dots cleanly without wiping the element
           const tdots = tb.querySelector('.typing-dots');
           if (tdots) tdots.remove();
-          first = true; t0 = Date.now();
+          first = true; t0 = Date.now(); streamStartTime = Date.now();
         }
         fullReply += delta;
         tokenBatch++;
         tok += delta.length;
-        if (tokenBatch % 4 === 0) {
+        // Hold off rendering until buffer fills, then render every 8 tokens
+        const elapsed = streamStartTime ? Date.now() - streamStartTime : 0;
+        if (elapsed >= BUFFER_DELAY_MS && tokenBatch % 8 === 0) {
           scheduleRender(tb, stripMemoryCommands(fullReply));
           smartScroll();
         }
@@ -847,9 +809,8 @@ export async function sendMessage() {
       const tps = (tok / elapsed).toFixed(1);
       const spd = document.getElementById("tokenSpeed");
       if (spd) spd.textContent = tps + " tok/s";
-      // Show in core bar too
       const coreTok = document.getElementById("coreTokSpeed");
-      if (coreTok) coreTok.textContent = _useCore ? tps + " tok/s" : "";
+      if (coreTok) coreTok.textContent = _useCore ? tps + " tok/s faster" : "";
     }
     if (_stopRequested && fullReply) {
       fullReply += "\n\n[Generation stopped]";
@@ -898,12 +859,32 @@ export async function goHome() {
     const badge = document.getElementById("modelBadge");
     if (badge) badge.className = "model-badge loaded";
     _selectedModelId = activeModelId;
+    // Show resume button — engine stays alive (Pause mode)
     const btn = document.getElementById("loadBtn");
-    if (btn) { btn.innerHTML = '<span class="material-icons-round">chat</span> Resume Chat'; btn.onclick = resumeChat; }
+    if (btn) {
+      btn.innerHTML = '<span class="material-icons-round">play_arrow</span> Resume Chat';
+      btn.onclick = resumeChat;
+      btn.style.background = '';
+    }
+    // Show paused banner under model picker
+    let pauseBanner = document.getElementById("pausedBanner");
+    if (!pauseBanner) {
+      pauseBanner = document.createElement("div");
+      pauseBanner.id = "pausedBanner";
+      pauseBanner.style.cssText = "width:100%;max-width:440px;display:flex;align-items:center;gap:.5rem;background:var(--amber-bg);border:1px solid var(--amber-dim);border-radius:6px;padding:.55rem .85rem;font-size:.67rem;color:var(--amber);font-family:'DM Mono',monospace;";
+      pauseBanner.innerHTML = '<span class="material-icons-round" style="font-size:14px;flex-shrink:0">pause_circle</span><span><strong>' + (m?.name || "Model") + '</strong> is paused — engine still loaded. Resume or switch models below.</span>';
+      const msw = document.getElementById("modelSelectWrap");
+      if (msw && msw.parentNode) msw.parentNode.insertBefore(pauseBanner, msw);
+    } else {
+      pauseBanner.style.display = "flex";
+    }
   }
 }
 export function resumeChat() {
   if (!engine || !activeModelId) { loadModel(); return; }
+  // Hide pause banner if present
+  const pb = document.getElementById("pausedBanner");
+  if (pb) pb.style.display = "none";
   document.getElementById("loadScreen").style.display = "none";
   document.getElementById("chatScreen").style.display = "flex";
   const homeBtn = document.getElementById("homeBtn");
