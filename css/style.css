@@ -182,8 +182,8 @@ header{
   .modal-section-label{border-radius:0;}
 }
 .modal-section-label{
-  font-size:.62rem;letter-spacing:.13em;text-transform:uppercase;
-  color:var(--muted);padding:.75rem 1rem .4rem;
+  font-size:.55rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);padding:.7rem 1rem .35rem;
   background:var(--bg2);border-top:1px solid var(--border);
   position:sticky;top:0;z-index:1;
 }
@@ -381,7 +381,7 @@ header{
   width:100%;max-width:840px;flex:1;
   display:flex;flex-direction:column;
   align-items:center;justify-content:flex-start;
-  padding:2rem 1rem 6rem;gap:1.4rem;
+  padding:0;gap:0;
   overflow-y:auto;-webkit-overflow-scrolling:touch;
 }
 .load-hero{text-align:center;display:flex;flex-direction:column;gap:.4rem;width:100%;max-width:440px}
@@ -515,11 +515,15 @@ textarea#msgInput::placeholder{color:var(--muted)}
 ════════════════════════════════════════════════════════ */
 @media(max-width:480px){
 
-  /* ── Prevent iOS auto-zoom on inputs ── */
+  /* ── Prevent iOS font-size boosting ── */
   html { font-size: 16px; }
+
+  /* ── Layout: body centres content ── */
+  body { align-items: center; }
 
   /* ── Header ── */
   header{
+    max-width: 100%;
     padding:.7rem 1rem;
     gap:.55rem;
   }
@@ -533,17 +537,21 @@ textarea#msgInput::placeholder{color:var(--muted)}
 
   /* ── Load screen outer shell ── */
   #loadScreen{
+    max-width:100%;
     padding:0;
     gap:0;
     overflow-y:auto;
     height:auto;
     align-items:stretch;
+    flex-direction:column;
   }
 
   /* ── Two-col becomes single stacked col ── */
   .load-desktop-cols{
     flex-direction:column;
     align-items:stretch;
+    max-width:100%;
+    height:auto;
     padding:0;
     gap:0;
     width:100%;
@@ -558,9 +566,11 @@ textarea#msgInput::placeholder{color:var(--muted)}
     gap:2rem;
     padding:2.25rem 1.5rem 2rem;
     background:var(--bg);
+    border-left:none;
     border-bottom:1px solid var(--border);
     order:1;
     width:100%;
+    max-width:100%;
     overflow:visible;
   }
 
@@ -574,15 +584,17 @@ textarea#msgInput::placeholder{color:var(--muted)}
     background:var(--bg2);
     order:2;
     width:100%;
+    max-width:100%;
+    overflow:visible;
   }
 
   /* ── Logo ── */
   .load-logo-wrap{justify-content:center;width:100%}
-  .load-logo-img{height:100px;width:auto}
+  .load-logo-img{height:96px;width:auto}
 
   /* ── "LocalLLM" hero title ── */
   .hero-brand-text{
-    font-size:3.2rem;
+    font-size:3rem;
     letter-spacing:-.06em;
     justify-content:center;
     width:100%;
@@ -613,6 +625,7 @@ textarea#msgInput::placeholder{color:var(--muted)}
   .model-select-card{
     width:100%;max-width:100%;
     border-radius:12px;
+    overflow:visible;
   }
   .model-picker-btn{
     padding:1rem 2.8rem 1rem 1.1rem;
@@ -620,7 +633,7 @@ textarea#msgInput::placeholder{color:var(--muted)}
     min-height:56px;
   }
   .model-info-row{
-    padding:.7rem 1.1rem;
+    padding:.75rem 1.1rem;
     gap:.55rem;
     font-size:.72rem;
     flex-wrap:wrap;
@@ -636,7 +649,7 @@ textarea#msgInput::placeholder{color:var(--muted)}
     margin-top:0;
   }
 
-  /* ── Left col title ── */
+  /* ── Left col section title ── */
   .load-col-title{
     font-size:.72rem;letter-spacing:.12em;
     margin-bottom:0;
@@ -651,7 +664,7 @@ textarea#msgInput::placeholder{color:var(--muted)}
     align-items:flex-start;
   }
   .exp-label-title{
-    font-size:.9rem;
+    font-size:.92rem;
     gap:.5rem;
     line-height:1.5;
   }
@@ -660,22 +673,21 @@ textarea#msgInput::placeholder{color:var(--muted)}
     margin-top:8px;
     line-height:1.75;
   }
-  /* Move toggle to top-right */
   .toggle{flex-shrink:0;align-self:flex-start;margin-top:2px}
 
   /* ── Speed table ── */
   .speed-table{width:100%;border-radius:12px}
   .speed-table-head{
-    padding:.75rem 1.1rem;
+    padding:.8rem 1.1rem;
     font-size:.7rem;
   }
-  .speed-row{padding:.75rem 1.1rem}
+  .speed-row{padding:.8rem 1.1rem}
   .speed-device{font-size:.8rem}
-  .speed-val{font-size:.78rem}
+  .speed-val{font-size:.8rem}
 
   /* ── Disclaimer ── */
   .disclaimer-note{
-    font-size:.76rem;
+    font-size:.78rem;
     padding:1.1rem 1.2rem;
     border-radius:12px;
     gap:.75rem;
@@ -685,12 +697,13 @@ textarea#msgInput::placeholder{color:var(--muted)}
   /* ── Mobile warning banner ── */
   .mobile-banner{
     padding:.85rem 1.5rem;
-    font-size:.8rem;
+    font-size:.82rem;
     gap:.7rem;
     line-height:1.65;
   }
 
   /* ══ CHAT SCREEN ══ */
+  #chatScreen { max-width: 100%; }
 
   /* ── Messages area ── */
   .messages{
@@ -702,7 +715,7 @@ textarea#msgInput::placeholder{color:var(--muted)}
   .msg-row{gap:.75rem}
   .avatar{width:30px;height:30px;min-width:30px}
   .msg-col{max-width:84%}
-  .msg-sender{font-size:.65rem;margin-bottom:2px}
+  .msg-sender{font-size:.65rem;margin-bottom:3px}
 
   /* ── Bubbles ── */
   .bubble{
@@ -718,7 +731,7 @@ textarea#msgInput::placeholder{color:var(--muted)}
   /* ── Think block ── */
   .think-header{padding:.65rem 1rem}
   .think-label{font-size:.68rem}
-  .think-content{font-size:.8rem;padding:.6rem .9rem .7rem}
+  .think-content{font-size:.8rem;padding:.65rem .9rem .7rem}
 
   /* ── Input bar ── */
   .bottom-area{
@@ -749,21 +762,21 @@ textarea#msgInput::placeholder{color:var(--muted)}
   /* ── Info bar ── */
   .info-bar{
     font-size:.65rem;
-    padding:.15rem 1rem .6rem;
+    padding:.2rem 1rem .65rem;
     letter-spacing:.04em;
   }
 
   /* ── Core stats bar ── */
   .core-stats-bar{padding:.55rem 1rem .5rem}
-  .core-stats-header{font-size:.68rem}
+  .core-stats-header{font-size:.7rem}
   .core-split-label{font-size:.68rem}
   .core-split-val{font-size:.66rem;min-width:80px}
 
   /* ── Chat sidebar ── */
   .chat-sidebar{width:100%;max-width:100%}
-  .chat-sidebar-head{padding:.95rem 1rem}
+  .chat-sidebar-head{padding:1rem 1rem}
   .chat-sidebar-title{font-size:1.05rem}
-  .chat-list-item{padding:.85rem 1rem}
+  .chat-list-item{padding:.9rem 1rem}
   .chat-list-title{font-size:.86rem}
   .chat-list-meta{font-size:.68rem}
 }
@@ -960,8 +973,8 @@ header .logo-img { /* sizes set by responsive rules above */ }
 }
 
 .picker-group-label{
-  font-size:.62rem;letter-spacing:.13em;text-transform:uppercase;
-  color:var(--muted);padding:.75rem 1rem .4rem;
+  font-size:.55rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);padding:.7rem 1rem .35rem;
   background:var(--bg2);border-top:1px solid var(--border);
   position:sticky;top:0;z-index:1;
 }
@@ -1328,10 +1341,12 @@ header .logo-img { /* sizes set by responsive rules above */ }
 
 /* ── Mobile explicit resets to prevent desktop CSS bleed ── */
 /* ════════════════════════════════════════════════════════
-   TABLET / NARROW — layout reset (max-width: 899px)
+   TABLET / NARROW — layout reset (481px – 899px)
    Stacks the two columns, removes desktop-only sizing.
+   NOTE: scoped to 481px+ so it never overrides the
+   dedicated max-width:480px phone block below.
 ════════════════════════════════════════════════════════ */
-@media(max-width: 899px) {
+@media(min-width: 481px) and (max-width: 899px) {
   body { align-items: center; }
   header { max-width: 840px; }
 
