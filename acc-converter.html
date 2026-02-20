@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ACC Converter — Actalithic</title>
+<link rel="icon" type="image/png" href="https://i.ibb.co/DfYLtMhQ/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script>(function(){var s=localStorage.getItem('llm-theme');document.documentElement.setAttribute('data-theme',s||'dark');})()</script>
+<style>
+/* ── Converter-specific styles ── */
+.converter-wrap{
+  width:100%;max-width:720px;margin:0 auto;
+  padding:1.5rem 1rem 4rem;
+  display:flex;flex-direction:column;gap:1.5rem;
+}
+.conv-card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:1.25rem 1.5rem;
+}
+.conv-card-title{
+  font-family:'Syne',sans-serif;font-weight:700;font-size:.95rem;
+  color:var(--ink);margin-bottom:.85rem;
+  display:flex;align-items:center;gap:.5rem;
+}
+.conv-card-title .material-icons-round{font-size:18px;color:var(--purple)}
+
+/* Drop zone */
+.drop-zone{
+  border:2px dashed var(--border2);border-radius:var(--radius);
+  padding:2.5rem 1rem;text-align:center;
+  cursor:pointer;transition:all .2s;
+  background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;gap:.65rem;
+}
+.drop-zone:hover,.drop-zone.drag-over{
+  border-color:var(--purple);background:var(--purple-bg);
+}
+.drop-zone .material-icons-round{font-size:2.5rem;color:var(--muted)}
+.drop-zone.drag-over .material-icons-round{color:var(--purple)}
+.drop-label{font-size:.8rem;color:var(--muted)}
+.drop-hint{font-size:.65rem;color:var(--border2)}
+.drop-file-name{
+  font-size:.75rem;color:var(--green);font-weight:500;
+  display:flex;align-items:center;gap:.35rem;margin-top:.25rem;
+}
+
+/* Options grid */
+.options-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:1rem;
+  margin-top:.25rem;
+}
+.opt-field{display:flex;flex-direction:column;gap:.4rem}
+.opt-label{font-size:.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.opt-select, .opt-input{
+  font-family:'DM Mono',monospace;font-size:.75rem;
+  padding:.5rem .75rem;border-radius:4px;
+  background:var(--bg);border:1px solid var(--border2);color:var(--ink);
+  outline:none;transition:border-color .15s;
+}
+.opt-select:focus,.opt-input:focus{border-color:var(--purple)}
+
+/* Tokenizer drop */
+.tok-drop{
+  border:1.5px dashed var(--border);border-radius:4px;
+  padding:.6rem .75rem;font-size:.72rem;color:var(--muted);
+  cursor:pointer;transition:all .15s;background:var(--bg);
+  display:flex;align-items:center;gap:.4rem;
+}
+.tok-drop:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-bg)}
+.tok-drop.loaded{border-color:var(--green);color:var(--green);background:var(--green-bg)}
+
+/* Convert button */
+.conv-btn{
+  width:100%;padding:.9rem;
+  font-family:'Syne',sans-serif;font-weight:700;font-size:.9rem;
+  letter-spacing:.04em;border-radius:var(--radius);
+  background:var(--accent);color:var(--accent-inv);border:none;
+  cursor:pointer;transition:all .18s;
+  display:flex;align-items:center;justify-content:center;gap:.5rem;
+}
+.conv-btn:hover{opacity:.88;transform:translateY(-1px)}
+.conv-btn:active{transform:scale(.97)}
+.conv-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+
+/* Progress section */
+.progress-section{display:none}
+.progress-section.visible{display:block}
+.progress-log{
+  font-size:.65rem;color:var(--muted);
+  max-height:140px;overflow-y:auto;
+  border:1px solid var(--border);border-radius:4px;
+  padding:.5rem .75rem;background:var(--bg);
+  display:flex;flex-direction:column;gap:.2rem;
+  margin-top:.75rem;
+}
+.log-line{display:flex;gap:.5rem}
+.log-pct{color:var(--purple);flex-shrink:0;width:3em;text-align:right}
+.log-msg{color:var(--ink2)}
+
+/* Results section */
+.result-section{display:none}
+.result-section.visible{display:flex;flex-direction:column;gap:.75rem}
+.result-stat{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.5rem 0;border-bottom:1px solid var(--border);
+  font-size:.73rem;
+}
+.result-stat-label{color:var(--muted)}
+.result-stat-val{color:var(--ink);font-weight:500}
+.result-stat-val.green{color:var(--green)}
+
+.action-row{display:flex;gap:.65rem;flex-wrap:wrap}
+.action-btn{
+  flex:1;min-width:160px;padding:.75rem .5rem;
+  font-family:'Syne',sans-serif;font-weight:700;font-size:.78rem;
+  border-radius:var(--radius);border:1.5px solid var(--border2);
+  background:var(--bg2);color:var(--ink);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:.4rem;
+  transition:all .15s;
+}
+.action-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-bg)}
+.action-btn.primary{background:var(--accent);color:var(--accent-inv);border-color:var(--accent)}
+.action-btn.primary:hover{opacity:.85}
+.action-btn .material-icons-round{font-size:16px}
+
+/* Arch badge */
+.arch-badge{
+  font-size:.6rem;padding:2px 7px;border-radius:20px;
+  border:1px solid var(--purple);color:var(--purple);
+  background:var(--purple-bg);font-weight:500;
+  display:inline-block;margin-left:.4rem;
+}
+/* Warning */
+.conv-warning{
+  background:var(--amber-bg);border:1px solid var(--amber-dim);
+  border-radius:4px;padding:.6rem .75rem;font-size:.67rem;
+  color:var(--amber);display:flex;gap:.5rem;align-items:flex-start;
+}
+.conv-warning .material-icons-round{font-size:14px;flex-shrink:0;margin-top:1px}
+</style>
+</head>
+<body>
+<!-- ── HEADER ── -->
+<header>
+  <div class="header-brand">
+    <img class="logo-img logo-light" src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png" alt="LocalLLM by Actalithic">
+    <img class="logo-img logo-dark"  src="https://i.ibb.co/tpSTrg7Z/whitelogo.png" alt="LocalLLM by Actalithic">
+  </div>
+  <div class="header-right">
+    <a class="icon-btn" href="index.html" title="LocalLLM"><span class="material-icons-round">home</span></a>
+    <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme">
+      <span class="material-icons-round" id="themeIcon">light_mode</span>
+    </button>
+  </div>
+</header>
+
+<div class="converter-wrap">
+
+  <!-- Title -->
+  <div>
+    <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:1.5rem;color:var(--ink)">
+      .acc Converter
+    </div>
+    <div style="font-size:.73rem;color:var(--muted);margin-top:.3rem">
+      Convert safetensors models to Actalithic's browser-native format.
+      Everything runs in your browser — nothing is uploaded anywhere.
+    </div>
+  </div>
+
+  <!-- Warning -->
+  <div class="conv-warning">
+    <span class="material-icons-round">memory</span>
+    <span>Large models (7B+) need <strong>16–32 GB RAM</strong> to convert in-browser.
+    The raw weights + quantized output are held in memory simultaneously during conversion.</span>
+  </div>
+
+  <!-- Step 1: Drop safetensors -->
+  <div class="conv-card">
+    <div class="conv-card-title">
+      <span class="material-icons-round">upload_file</span>
+      1 — Drop your safetensors file
+    </div>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <span class="material-icons-round">cloud_upload</span>
+      <div class="drop-label">Drop <code>.safetensors</code> file here</div>
+      <div class="drop-hint">or click to browse — single file only (multi-shard coming soon)</div>
+      <div class="drop-file-name" id="dropFileName" style="display:none">
+        <span class="material-icons-round" style="font-size:14px">check_circle</span>
+        <span id="dropFileNameText"></span>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept=".safetensors" style="display:none">
+  </div>
+
+  <!-- Step 2: Options -->
+  <div class="conv-card">
+    <div class="conv-card-title">
+      <span class="material-icons-round">tune</span>
+      2 — Conversion options
+    </div>
+    <div class="options-grid">
+      <div class="opt-field">
+        <div class="opt-label">Quantization</div>
+        <select class="opt-select" id="quantMode">
+          <option value="q4" selected>Q4 — 4-bit (smallest, ~25% size)</option>
+          <option value="q8">Q8 — 8-bit (balanced, ~50% size)</option>
+          <option value="f16">F16 — half precision (~50% size)</option>
+          <option value="f32">F32 — full precision (no compression)</option>
+        </select>
+      </div>
+      <div class="opt-field">
+        <div class="opt-label">Shard size</div>
+        <select class="opt-select" id="shardSize">
+          <option value="134217728">128 MB</option>
+          <option value="268435456" selected>256 MB</option>
+          <option value="536870912">512 MB</option>
+          <option value="1073741824">1 GB</option>
+        </select>
+      </div>
+      <div class="opt-field">
+        <div class="opt-label">Model name</div>
+        <input class="opt-input" id="modelName" type="text" placeholder="my-model" value="my-model">
+      </div>
+      <div class="opt-field">
+        <div class="opt-label">Arch override (optional)</div>
+        <select class="opt-select" id="archOverride">
+          <option value="">Auto-detect</option>
+          <option value="llama">LLaMA / LLaMA 3</option>
+          <option value="mistral">Mistral</option>
+          <option value="phi">Phi</option>
+          <option value="gemma">Gemma</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Tokenizer -->
+    <div style="margin-top:1rem">
+      <div class="opt-label" style="margin-bottom:.4rem">Tokenizer (optional but recommended)</div>
+      <div class="tok-drop" id="tokDrop" onclick="document.getElementById('tokInput').click()">
+        <span class="material-icons-round" style="font-size:16px">token</span>
+        <span id="tokDropText">Drop tokenizer.json here or click to browse</span>
+      </div>
+      <input type="file" id="tokInput" accept=".json" style="display:none">
+    </div>
+  </div>
+
+  <!-- Step 3: Convert -->
+  <div class="conv-card">
+    <div class="conv-card-title">
+      <span class="material-icons-round">bolt</span>
+      3 — Convert
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-section" id="progressSection">
+      <div class="progress-track" style="margin-bottom:.4rem">
+        <div class="progress-fill" id="convProgressFill" style="width:0%"></div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-status" id="convStatus">Starting…</div>
+        <div class="progress-label" id="convPct">0%</div>
+      </div>
+      <div class="progress-log" id="progressLog"></div>
+    </div>
+
+    <!-- Result -->
+    <div class="result-section" id="resultSection">
+      <div class="result-stat">
+        <span class="result-stat-label">Architecture</span>
+        <span class="result-stat-val" id="resArch">—</span>
+      </div>
+      <div class="result-stat">
+        <span class="result-stat-label">Tensors</span>
+        <span class="result-stat-val" id="resTensors">—</span>
+      </div>
+      <div class="result-stat">
+        <span class="result-stat-label">Shards created</span>
+        <span class="result-stat-val" id="resShards">—</span>
+      </div>
+      <div class="result-stat">
+        <span class="result-stat-label">Quantization</span>
+        <span class="result-stat-val" id="resQuant">—</span>
+      </div>
+      <div class="result-stat">
+        <span class="result-stat-label">Estimated output size</span>
+        <span class="result-stat-val green" id="resSize">—</span>
+      </div>
+
+      <div class="action-row" style="margin-top:.5rem">
+        <button class="action-btn primary" onclick="downloadModel()">
+          <span class="material-icons-round">download</span>
+          Download .acc folder
+        </button>
+        <button class="action-btn" onclick="saveToOPFSModel()" id="opfsBtn">
+          <span class="material-icons-round">save</span>
+          Save to browser cache
+        </button>
+      </div>
+      <div style="font-size:.6rem;color:var(--muted);margin-top:.35rem">
+        "Download" uses the File System Access API to save directly to a folder.
+        "Save to browser cache" uses OPFS — instant load next time, no re-download needed.
+      </div>
+    </div>
+
+    <button class="conv-btn" id="convBtn" onclick="startConversion()">
+      <span class="material-icons-round">auto_fix_high</span>
+      Convert to .acc
+    </button>
+  </div>
+
+</div>
+
+<script type="module">
+import {
+  convertSafetensors,
+  downloadBundle,
+  saveToOPFS,
+} from './js/acc-converter.js';
+import { toggleTheme } from './js/theme.js';
+
+window.toggleTheme = toggleTheme;
+
+let _file       = null;
+let _tokContent = null;
+let _bundle     = null;
+let _kernelsSrc = null;
+
+// Load kernels.wgsl source
+fetch('./webgpu/kernels.wgsl').then(r => r.text()).then(t => { _kernelsSrc = t; }).catch(() => {});
+
+// ── Apply theme logos ────────────────────────────────────────────────────────
+function applyLogos() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.querySelectorAll('.logo-light').forEach(el => el.style.display = isDark ? 'none' : 'block');
+  document.querySelectorAll('.logo-dark').forEach(el =>  el.style.display = isDark ? 'block' : 'none');
+  const icon = document.getElementById('themeIcon');
+  if (icon) icon.textContent = isDark ? 'light_mode' : 'dark_mode';
+}
+applyLogos();
+new MutationObserver(applyLogos).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ── File drop ────────────────────────────────────────────────────────────────
+const dropZone  = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) setFile(fileInput.files[0]);
+});
+
+function setFile(f) {
+  _file = f;
+  document.getElementById('dropFileName').style.display = 'flex';
+  document.getElementById('dropFileNameText').textContent = `${f.name} (${formatBytes(f.size)})`;
+  // Suggest model name from filename
+  const base = f.name.replace('.safetensors', '').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
+  document.getElementById('modelName').value = base;
+}
+
+// ── Tokenizer drop ───────────────────────────────────────────────────────────
+const tokDrop  = document.getElementById('tokDrop');
+const tokInput = document.getElementById('tokInput');
+
+tokDrop.addEventListener('dragover', e => { e.preventDefault(); tokDrop.style.borderColor = 'var(--purple)'; });
+tokDrop.addEventListener('dragleave', () => tokDrop.style.borderColor = '');
+tokDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if (f) setTok(f);
+});
+tokInput.addEventListener('change', () => { if (tokInput.files[0]) setTok(tokInput.files[0]); });
+
+function setTok(f) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    _tokContent = reader.result;
+    tokDrop.classList.add('loaded');
+    document.getElementById('tokDropText').textContent = `✓ ${f.name} loaded`;
+  };
+  reader.readAsText(f);
+}
+
+// ── Conversion ───────────────────────────────────────────────────────────────
+window.startConversion = async function() {
+  if (!_file) { alert('Please drop a .safetensors file first.'); return; }
+
+  const btn = document.getElementById('convBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-icons-round">hourglass_empty</span> Converting…';
+
+  document.getElementById('progressSection').classList.add('visible');
+  document.getElementById('resultSection').classList.remove('visible');
+  document.getElementById('progressLog').innerHTML = '';
+
+  const quantMode     = document.getElementById('quantMode').value;
+  const shardSizeBytes = parseInt(document.getElementById('shardSize').value);
+  const archOverride  = document.getElementById('archOverride').value;
+
+  function onProgress(pct, msg) {
+    document.getElementById('convProgressFill').style.width = pct + '%';
+    document.getElementById('convStatus').textContent = msg;
+    document.getElementById('convPct').textContent = pct + '%';
+    const log = document.getElementById('progressLog');
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `<span class="log-pct">${pct}%</span><span class="log-msg">${msg}</span>`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  try {
+    const buffer = await _file.arrayBuffer();
+
+    _bundle = await convertSafetensors(buffer, {
+      quantMode,
+      shardSizeBytes,
+      onProgress,
+      configOverrides: archOverride ? { arch: archOverride } : {},
+      tokenizerJson: _tokContent,
+      kernelsSrc: _kernelsSrc,
+    });
+
+    // Show results
+    const m = _bundle.manifest;
+    const c = _bundle.config;
+    document.getElementById('resArch').innerHTML =
+      `${c.arch} <span class="arch-badge">${m.quant.toUpperCase()}</span>`;
+    document.getElementById('resTensors').textContent = m.tensor_count;
+    document.getElementById('resShards').textContent  = m.num_shards;
+    document.getElementById('resQuant').textContent   = m.quant.toUpperCase();
+
+    const totalBytes = _bundle.shards.reduce((s, b) => s + b.byteLength, 0);
+    document.getElementById('resSize').textContent = formatBytes(totalBytes);
+
+    document.getElementById('resultSection').classList.add('visible');
+    btn.innerHTML = '<span class="material-icons-round">check_circle</span> Conversion complete!';
+
+  } catch (err) {
+    onProgress(0, '❌ Error: ' + err.message);
+    console.error(err);
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-icons-round">auto_fix_high</span> Retry';
+  }
+};
+
+window.downloadModel = async function() {
+  if (!_bundle) return;
+  const modelName = document.getElementById('modelName').value || 'model';
+  try {
+    const result = await downloadBundle(_bundle, modelName);
+    console.log('Download complete:', result);
+  } catch (e) {
+    if (e.name !== 'AbortError') alert('Download failed: ' + e.message);
+  }
+};
+
+window.saveToOPFSModel = async function() {
+  if (!_bundle) return;
+  const modelName = document.getElementById('modelName').value || 'model';
+  const btn = document.getElementById('opfsBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-icons-round">hourglass_empty</span> Saving…';
+  try {
+    await saveToOPFS(_bundle, modelName);
+    btn.innerHTML = '<span class="material-icons-round">check_circle</span> Saved!';
+    btn.style.color = 'var(--green)';
+  } catch (e) {
+    alert('OPFS save failed: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-icons-round">save</span> Save to browser cache';
+  }
+};
+
+function formatBytes(b) {
+  if (b >= 1e9) return (b / 1e9).toFixed(2) + ' GB';
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB';
+  if (b >= 1e3) return (b / 1e3).toFixed(0) + ' KB';
+  return b + ' B';
+}
+</script>
+</body>
+</html>

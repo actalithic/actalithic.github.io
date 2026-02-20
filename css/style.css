@@ -1415,3 +1415,62 @@ header .logo-img { /* sizes set by responsive rules above */ }
   .model-select-card{overflow:visible!important}
   #modelPickerWrap{overflow:visible!important}
 }
+
+/* ════════════════════════════════════════════════════════
+   ACC ENGINE ADDITIONS — LocalLLM by Actalithic
+════════════════════════════════════════════════════════ */
+
+/* ACC badge in picker and modal */
+.acc-badge{
+  display:inline-block;font-size:.5rem;letter-spacing:.05em;
+  color:var(--purple);border:1px solid var(--purple);
+  border-radius:3px;padding:1px 5px;vertical-align:middle;
+  background:var(--purple-bg);
+}
+.acc-badge.lg{font-size:.62rem;padding:2px 7px;border-radius:4px}
+
+/* Phase labels in progress bar for ACC loading */
+.progress-phase{
+  font-size:.58rem;color:var(--purple);letter-spacing:.06em;
+  text-transform:uppercase;margin-left:.4rem;opacity:.8;
+}
+
+/* Dev download tooltip — shown on hover of .acc Load button */
+.mc-btn[ondblclick]::after{
+  content:"Double-click to download .acc";
+  position:absolute;bottom:calc(100% + 6px);right:0;
+  font-size:.58rem;color:var(--ink2);background:var(--bg2);
+  border:1px solid var(--border2);border-radius:4px;
+  padding:4px 8px;white-space:nowrap;pointer-events:none;
+  opacity:0;transition:opacity .15s;z-index:999;
+}
+.mc-btn[ondblclick]:hover::after{opacity:1}
+.modal-model-actions{position:relative}
+
+/* Download ACC button (purple) */
+.mc-btn.acc-dl{
+  color:var(--purple);border-color:var(--purple);
+  background:var(--purple-bg);
+}
+.mc-btn.acc-dl:hover{
+  background:var(--purple-dim);border-color:var(--purple);
+}
+
+/* Converter link in modal footer */
+.modal-foot-convert{
+  font-size:.6rem;color:var(--purple);
+  display:flex;align-items:center;gap:.3rem;
+  text-decoration:none;opacity:.8;transition:opacity .15s;
+  margin-right:auto;
+}
+.modal-foot-convert:hover{opacity:1}
+.modal-foot-convert .material-icons-round{font-size:12px}
+
+/* ACC model engine indicator in speed table */
+.speed-val.acc{color:var(--purple);font-weight:600}
+
+/* ACC model: download from HF indicator in picker */
+.picker-hf-note{
+  font-size:.55rem;color:var(--purple);
+  display:flex;align-items:center;gap:.2rem;margin-top:.2rem;
+}

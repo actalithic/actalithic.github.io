@@ -1,5 +1,5 @@
 // sw.js — Service Worker for LocalLLM by Actalithic
-const CACHE = 'localllm-v3';
+const CACHE = 'localllm-v4';
 const STATIC = [
   '/',
   '/index.html',
@@ -10,6 +10,10 @@ const STATIC = [
   '/js/models.js',
   '/js/theme.js',
   '/js/firebase.js',
+  '/js/llm-worker.js',
+  '/js/ACC-Worker.js',
+  '/js/acc-converter.js',
+  '/webgpu/kernels.wgsl',
   '/sw.js',
   // Logos & favicon
   'https://i.ibb.co/DfYLtMhQ/favicon.png',
@@ -34,8 +38,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
-  // Skip MLC model downloads — they use range requests
-  if (url.includes('huggingface.co') || url.includes('mlc-ai') || url.includes('esm.run') || url.includes('gstatic.com/firebasejs')) {
+  // Skip MLC model downloads, HF downloads, and external CDNs
+  if (url.includes('huggingface.co') || url.includes('mlc-ai') ||
+      url.includes('esm.run') || url.includes('gstatic.com/firebasejs')) {
     return;
   }
   e.respondWith(

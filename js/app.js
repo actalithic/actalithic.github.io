@@ -1,6 +1,65 @@
 // app.js — LocalLLM by Actalithic
 import * as webllm from "https://esm.run/@mlc-ai/web-llm";
-import { MODELS, RUN_LABELS } from "./models.js";
+import { MODELS, ACC_MODELS, RUN_LABELS, getAllModels, getModelById, isACCModel } from "./models.js";
+
+// ── ACC-Worker bridge ─────────────────────────────────────────────────────────
+// Wraps ACC-Worker so the rest of app.js works identically for both MLC and ACC.
+class ACCEngineProxy {
+  constructor() {
+    this._worker = null; this._ready = false;
+    this._resolve = null; this._reject = null;
+    this._onToken = null; this._onDone = null; this._onProgress = null;
+  }
+  async load(model, onProgress) {
+    this._onProgress = onProgress;
+    let kernelsSrc = null;
+    try {
+      const r = await fetch(new URL("../webgpu/kernels.wgsl", import.meta.url));
+      if (r.ok) kernelsSrc = await r.text();
+    } catch {}
+    this._worker = new Worker(new URL("./ACC-Worker.js", import.meta.url), { type: "module" });
+    this._worker.onmessage = (e) => this._onMessage(e.data);
+    this._worker.onerror   = (e) => { if (this._reject) this._reject(new Error(e.message)); };
+    return new Promise((res, rej) => {
+      this._resolve = res; this._reject = rej;
+      this._worker.postMessage({ type: "load", model, kernelsSrc });
+    });
+  }
+  _onMessage(msg) {
+    if (msg.type === "progress" && this._onProgress) this._onProgress(msg);
+    else if (msg.type === "ready")  { this._ready = true; this._resolve?.(); this._resolve = null; }
+    else if (msg.type === "token" && this._onToken) this._onToken(msg.text, msg.id);
+    else if (msg.type === "done")   { this._onDone?.(msg); this._onDone = null; this._onToken = null; }
+    else if (msg.type === "error")  { this._reject?.(new Error(msg.message)); this._reject = null; }
+  }
+  get chat() {
+    const self = this;
+    return { completions: { create(opts) {
+      return { [Symbol.asyncIterator]() {
+        const q = []; let done = false, waiter = null;
+        self._onToken = (text) => {
+          const chunk = { choices: [{ delta: { content: text }, finish_reason: null }] };
+          if (waiter) { const w = waiter; waiter = null; w({ value: chunk, done: false }); }
+          else q.push(chunk);
+        };
+        self._onDone = () => { done = true; if (waiter) { const w = waiter; waiter = null; w({ value: undefined, done: true }); } };
+        self._worker.postMessage({ type: "generate", messages: opts.messages,
+          opts: { maxNewTokens: opts.max_tokens||512, temperature: opts.temperature||0.7, topP: opts.top_p||0.9, topK: opts.top_k||50 } });
+        return {
+          next()    { if (q.length) return Promise.resolve({ value: q.shift(), done: false }); if (done) return Promise.resolve({ value: undefined, done: true }); return new Promise(r => { waiter = r; }); },
+          return()  { return Promise.resolve({ done: true }); },
+        };
+      }};
+    }}};
+  }
+  interruptGenerate() { this._worker?.postMessage({ type: "stop" }); }
+  async unload() {
+    try { this._worker?.postMessage({ type: "unload" }); } catch {}
+    await new Promise(r => setTimeout(r, 200));
+    try { this._worker?.terminate(); } catch {}
+    this._worker = null; this._ready = false;
+  }
+}
 
 // ── Image URLs ───────────────────────────────────────────
 const ICON_URL      = "https://i.ibb.co/KxCDDsc7/logoico.png";
@@ -31,10 +90,11 @@ const DESKTOP_TOP_P = 0.95;
 // ── State ─────────────────────────────────────────────────
 let engine = null, generating = false, history = [], activeModelId = null;
 let _useCore = false, _useCPU = false;
-let _currentChatId = null;  // active chat session ID
-const _perModelThink = {};  // per-model think toggle override
-let _selectedModelId = MODELS[0].id; // default: Llama 3.2 3B
+let _currentChatId = null;
+const _perModelThink = {};
+let _selectedModelId = MODELS[0].id;
 let _stopRequested = false;
+let _engineType = "mlc"; // "mlc" | "acc"
 
 // ── Render throttle (perf) ────────────────────────────────
 // Batch DOM writes every RENDER_INTERVAL_MS — keeps GPU thread hot
@@ -91,6 +151,22 @@ async function getCachedModelIds() {
   return cached;
 }
 
+// Check if an ACC model is cached in OPFS
+function _isACCCached(modelId) {
+  // We can't do async here, so we use a background check + store result
+  if (_accCacheStatus.has(modelId)) return _accCacheStatus.get(modelId);
+  // Kick off async check
+  navigator.storage?.getDirectory?.().then(root =>
+    root.getDirectoryHandle(modelId).then(() => {
+      _accCacheStatus.set(modelId, true);
+    }).catch(() => {
+      _accCacheStatus.set(modelId, false);
+    })
+  ).catch(() => {});
+  return false;
+}
+const _accCacheStatus = new Map();
+
 // ── Mobile banner ─────────────────────────────────────────
 function showMobileBanner() {
   const banner = document.getElementById("mobileBanner");
@@ -99,9 +175,9 @@ function showMobileBanner() {
 
 // ── Custom Model Picker ──────────────────────────────────
 const GROUPS = [
-  { label: "Fast",     ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC"] },
-  { label: "Balanced", ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC"] },
-  { label: "Powerful", ids: ["DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
+  { label: "Light",    ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC", "gemma-3-4b-it.acc"] },
+  { label: "Middle",   ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC"] },
+  { label: "Advanced", ids: ["qwen2.5-7b-instruct.acc", "DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
 ];
 
 function runPill(m) {
@@ -113,7 +189,120 @@ function buildPicker(cached) {
   const wrap = document.getElementById("modelPickerWrap");
   if (!wrap) return;
 
-  const selM = MODELS.find(m => m.id === _selectedModelId) || MODELS[0];
+  const allModels = getAllModels();
+  const selM = allModels.find(m => m.id === _selectedModelId) || allModels[0];
+
+  wrap.innerHTML = `
+    <div class="model-picker-wrap">
+      <div class="model-picker-backdrop" id="pickerBackdrop"></div>
+      <button class="model-picker-btn" id="pickerBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+        <span class="model-picker-cached-dot ${cached.has(selM.id) || selM.engine === 'acc' ? 'visible' : ''}" id="pickerDot"></span>
+        <span id="pickerLabel">${selM.name}</span>
+        <span style="color:var(--muted);font-size:.72rem;margin-left:.3rem">${selM.size}</span>
+        ${selM.engine === 'acc' ? '<span style="font-size:.55rem;color:var(--purple);margin-left:.3rem;border:1px solid var(--purple);border-radius:3px;padding:1px 4px">ACC</span>' : ''}
+      </button>
+      <div class="model-picker-dropdown" id="pickerDropdown" role="listbox">
+        <div class="model-picker-sheet-handle"></div>
+        <div class="model-picker-sheet-title">Choose a model</div>
+        ${GROUPS.map(g => `
+          <div class="picker-group-label">${g.label}</div>
+          ${g.ids.map(id => {
+            const m = allModels.find(x => x.id === id);
+            if (!m) return '';
+            const isCached  = cached.has(id) || (m.engine === 'acc' && _isACCCached(id));
+            const isSelected = id === _selectedModelId;
+            const isACC     = m.engine === 'acc';
+            const mobileWarn = IS_MOBILE && m.runability !== 'easy'
+              ? `<span style="color:var(--red);font-size:.55rem">⚠ not recommended on phones</span>` : '';
+            const accBadge = isACC
+              ? `<span style="font-size:.52rem;color:var(--purple);border:1px solid var(--purple);border-radius:3px;padding:1px 4px">ACC Native</span>` : '';
+            return `
+              <div class="picker-option ${isSelected ? 'selected' : ''}" role="option" aria-selected="${isSelected}" data-id="${id}">
+                <div class="picker-option-dot"></div>
+                <div class="picker-option-info">
+                  <div class="picker-option-name">${m.name}
+                    ${m.mobileRecommended && IS_MOBILE ? ' <span style="color:var(--green);font-size:.55rem"><span class="material-icons-round" style="font-size:10px;vertical-align:middle">check_circle</span> phone-friendly</span>' : ''}
+                  </div>
+                  <div class="picker-option-meta">
+                    <span class="picker-option-size">${m.creator} · ${m.size} download · ${m.ram} RAM</span>
+                    ${runPill(m)}
+                    ${accBadge}
+                    ${isCached ? '<span style="color:var(--green);font-size:.55rem"><span class="material-icons-round" style="font-size:10px;vertical-align:middle">check_circle</span> cached</span>' : isACC ? '<span style="color:var(--purple);font-size:.55rem">⬇ downloads from HuggingFace</span>' : ''}
+                    ${mobileWarn}
+                  </div>
+                  ${(m.id.toLowerCase().includes('deepseek') || m.id.toLowerCase().includes('r1'))
+                    ? `<div class="picker-think-row" onclick="event.stopPropagation()">
+                        <span class="picker-think-label"><span class="material-icons-round" style="font-size:11px;vertical-align:middle">psychology</span> Thinking</span>
+                        <label class="picker-think-toggle">
+                          <input type="checkbox" ${getModelThink(id) ? 'checked' : ''}
+                            onchange="setModelThink('${id}', this.checked); event.stopPropagation()">
+                          <span class="picker-think-slider"></span>
+                        </label>
+                      </div>` : ''}
+                </div>
+                <div class="picker-option-cached ${isCached ? 'visible' : ''}"></div>
+                <div class="picker-check"><span class="material-icons-round">check</span></div>
+              </div>`;
+          }).join('')}
+        `).join('')}
+      </div>
+    </div>`;
+
+  const pickerBtn = document.getElementById("pickerBtn");
+  const dropdown  = document.getElementById("pickerDropdown");
+  const backdrop  = document.getElementById("pickerBackdrop");
+  const wrap2     = wrap.querySelector(".model-picker-wrap");
+
+  function openPicker() {
+    wrap2.classList.add("open");
+    pickerBtn.setAttribute("aria-expanded", "true");
+    document.body.style.overflow = "hidden";
+    if (window.innerWidth >= 601) {
+      requestAnimationFrame(() => {
+        const r  = pickerBtn.getBoundingClientRect();
+        const dd = document.getElementById("pickerDropdown");
+        if (!dd) return;
+        const spaceBelow = window.innerHeight - r.bottom - 8;
+        const spaceAbove = r.top - 8;
+        const maxH = Math.min(Math.max(spaceBelow, spaceAbove), window.innerHeight * 0.55);
+        dd.style.maxHeight = maxH + "px";
+        dd.style.width     = Math.max(r.width, 280) + "px";
+        dd.style.left      = r.left + "px";
+        dd.style.right     = "auto";
+        const ddW = Math.max(r.width, 280);
+        if (r.left + ddW > window.innerWidth - 8) {
+          dd.style.left = Math.max(8, window.innerWidth - ddW - 8) + "px";
+        }
+        if (spaceBelow >= spaceAbove || spaceBelow > 150) {
+          dd.style.top = (r.bottom + 4) + "px"; dd.style.bottom = "auto";
+        } else {
+          dd.style.top = "auto"; dd.style.bottom = (window.innerHeight - r.top + 4) + "px";
+        }
+      });
+    }
+  }
+  function closePicker() {
+    wrap2.classList.remove("open");
+    pickerBtn.setAttribute("aria-expanded", "false");
+    document.body.style.overflow = "";
+  }
+
+  pickerBtn.addEventListener("click", () => wrap2.classList.contains("open") ? closePicker() : openPicker());
+  backdrop.addEventListener("click", closePicker);
+
+  dropdown.addEventListener("click", (e) => {
+    const opt = e.target.closest(".picker-option");
+    if (!opt) return;
+    const id = opt.dataset.id;
+    if (!id) return;
+    _selectedModelId = id;
+    const natSel = document.getElementById("modelSelect");
+    if (natSel) natSel.value = id;
+    closePicker();
+    updateModelInfo();
+    buildPicker(cached);
+  });
+}
 
   wrap.innerHTML = `
     <div class="model-picker-wrap">
@@ -129,7 +318,7 @@ function buildPicker(cached) {
         ${GROUPS.map(g => `
           <div class="picker-group-label">${g.label}</div>
           ${g.ids.map(id => {
-            const m = MODELS.find(x => x.id === id);
+            const m = getAllModels().find(x => x.id === id);
             if (!m) return '';
             const isCached = cached.has(id);
             const isSelected = id === _selectedModelId;
@@ -225,7 +414,7 @@ function buildPicker(cached) {
     const natSel = document.getElementById("modelSelect");
     if (natSel) natSel.value = id;
 
-    const m = MODELS.find(x => x.id === id);
+    const m = getAllModels().find(x => x.id === id);
     document.getElementById("pickerLabel").textContent = m.name;
     const pickerSizeEl = document.querySelector("#pickerBtn span[style*='color:var(--muted)']") || document.querySelector("#pickerBtn span:last-of-type");
     if (pickerSizeEl) pickerSizeEl.textContent = m.size;
@@ -247,7 +436,7 @@ function buildPicker(cached) {
 
 export function updateModelInfo() {
   const id = _selectedModelId || document.getElementById("modelSelect")?.value;
-  const m  = MODELS.find(x => x.id === id);
+  const m  = getAllModels().find(x => x.id === id);
   if (!m) return;
   const row = document.getElementById("modelInfoRow");
   if (row) {
@@ -266,7 +455,7 @@ export function updateModelInfo() {
 }
 
 function updateSpeedTable(modelId) {
-  const m = MODELS.find(x => x.id === modelId);
+  const m = getAllModels().find(x => x.id === modelId);
   if (!m) return;
   const t = m.tokPerDevice;
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -305,7 +494,7 @@ export function getModelThink(modelId) {
 
 // ── System prompt ─────────────────────────────────────────
 function buildSystemPrompt(modelId, memories = []) {
-  const m       = MODELS.find(x => x.id === modelId);
+  const m       = getAllModels().find(x => x.id === modelId);
   const creator = m ? m.creator  : "a third party";
   const full    = m ? m.fullName : "a local language model";
   const short   = m ? m.name     : "this model";
@@ -415,10 +604,8 @@ export async function loadModel() {
   const progWrap = document.getElementById("progressWrap");
   const sub      = document.getElementById("loadSub");
   const msw      = document.getElementById("modelSelectWrap");
-  // Remove any lingering spinner
   const spnr = document.getElementById('spinner'); if (spnr) spnr.style.display = 'none';
 
-  // Hide pause banner when loading a new model
   const _pb = document.getElementById("pausedBanner");
   if (_pb) _pb.style.display = "none";
   if (engine) {
@@ -432,56 +619,78 @@ export async function loadModel() {
   if (progWrap) progWrap.style.display = "flex";
   if (msw) { msw.style.opacity = ".35"; msw.style.pointerEvents = "none"; }
 
+  // ── Determine engine type ────────────────────────────────────────────────
+  const allModels  = getAllModels();
+  const m          = allModels.find(x => x.id === modelId);
+  const useACC     = m?.engine === "acc";
+  _engineType      = useACC ? "acc" : "mlc";
+
   try {
-    // Prefer cached model data if available (speeds up non-first loads significantly)
-    const isCachedLoad = (await getCachedModelIds()).has(modelId);
-    const cfg = {
-      initProgressCallback: (r) => {
-        const pct = Math.round(r.progress * 100);
+    if (useACC) {
+      // ── ACC Engine path ────────────────────────────────────────────────
+      const proxy = new ACCEngineProxy();
+
+      proxy._onProgress = (msg) => {
+        const pct = msg.pct || 0;
         const pf = document.getElementById("progressFill"); if (pf) pf.style.width = pct + "%";
         const pl = document.getElementById("progressLabel"); if (pl) pl.textContent = pct + "%";
-        // Simplify status: strip verbose shader/fetch noise
         const ps = document.getElementById("progressStatus");
         if (ps) {
-          const raw = r.text || "";
-          let label = "Loading…";
-          if (raw.includes("Fetching") || raw.includes("fetch"))          label = "Downloading model…";
-          else if (raw.includes("shader") || raw.includes("Shader"))     label = "Compiling shaders…";
-          else if (raw.includes("load") && raw.includes("param"))        label = "Loading weights…";
-          else if (raw.includes("cache") || raw.includes("Cache"))       label = "Loading from cache…";
-          else if (pct === 100)                                            label = "Ready";
-          else if (pct > 0)                                               label = pct < 40 ? "Downloading…" : pct < 80 ? "Loading weights…" : "Compiling shaders…";
-          ps.textContent = label;
+          const phase = msg.phase || "";
+          if (phase === "download") ps.textContent = msg.msg.includes("MB") ? `Downloading… ${msg.msg.match(/[\d.]+\s*MB/)?.[0] || ""}` : "Downloading model…";
+          else if (phase === "convert") ps.textContent = "Converting to .acc…";
+          else if (phase === "cache")   ps.textContent = "Saving to cache…";
+          else if (phase === "gpu")     ps.textContent = pct < 95 ? "Uploading to GPU…" : "Compiling shaders…";
+          else if (phase === "done")    ps.textContent = "Ready";
+          else ps.textContent = msg.msg || "Loading…";
         }
-      },
-      // WebGPU performance hints
-      logLevel: "ERROR",  // suppress verbose MLC logs
-    };
-    if (_useCPU) {
-      cfg.backend = "wasm";
-    } else if (_useCore) {
-      // ActalithicCore: hybrid GPU+CPU for max throughput on VRAM-limited hardware
-      // Tuned for ~5 tok/s on 8B, ~7–12 tok/s on 7B, ~15–20 tok/s on 3B
-      cfg.gpuMemoryUtilization = 0.72;  // leave room for KV-cache → fewer evictions
-      cfg.prefillChunkSize = 256;       // smaller chunks = faster first token on split models
+      };
+
+      await proxy.load(m, proxy._onProgress);
+      engine = proxy;
+
     } else {
-      // Full-GPU: maximize VRAM use for fastest decode
-      cfg.gpuMemoryUtilization = 0.93;
-      cfg.prefillChunkSize = 1024;      // larger prefill = faster prompt processing
+      // ── MLC Engine path (unchanged) ────────────────────────────────────
+      const isCachedLoad = (await getCachedModelIds()).has(modelId);
+      const cfg = {
+        initProgressCallback: (r) => {
+          const pct = Math.round(r.progress * 100);
+          const pf = document.getElementById("progressFill"); if (pf) pf.style.width = pct + "%";
+          const pl = document.getElementById("progressLabel"); if (pl) pl.textContent = pct + "%";
+          const ps = document.getElementById("progressStatus");
+          if (ps) {
+            const raw = r.text || "";
+            let label = "Loading…";
+            if (raw.includes("Fetching") || raw.includes("fetch"))          label = "Downloading model…";
+            else if (raw.includes("shader") || raw.includes("Shader"))      label = "Compiling shaders…";
+            else if (raw.includes("load") && raw.includes("param"))         label = "Loading weights…";
+            else if (raw.includes("cache") || raw.includes("Cache"))        label = "Loading from cache…";
+            else if (pct === 100)                                            label = "Ready";
+            else if (pct > 0)                                                label = pct < 40 ? "Downloading…" : pct < 80 ? "Loading weights…" : "Compiling shaders…";
+            ps.textContent = label;
+          }
+        },
+        logLevel: "ERROR",
+      };
+      if (_useCPU) {
+        cfg.backend = "wasm";
+      } else if (_useCore) {
+        cfg.gpuMemoryUtilization = 0.72;
+        cfg.prefillChunkSize = 256;
+      } else {
+        cfg.gpuMemoryUtilization = 0.93;
+        cfg.prefillChunkSize = 1024;
+      }
+      const worker = new Worker(new URL("./llm-worker.js", import.meta.url), { type: "module" });
+      engine = await webllm.CreateWebWorkerMLCEngine(worker, modelId, cfg);
     }
 
-    // Use Web Worker so model computation runs off the main UI thread.
-    // This keeps the UI responsive during shader compilation & token generation.
-    const worker = new Worker(new URL("./llm-worker.js", import.meta.url), { type: "module" });
-    engine = await webllm.CreateWebWorkerMLCEngine(worker, modelId, cfg);
     activeModelId = modelId;
-    // memories loaded dynamically per-message; just track active model
     window._activeModelId = modelId;
 
     document.getElementById("loadScreen").style.display = "none";
     document.getElementById("chatScreen").style.display = "flex";
 
-    const m = MODELS.find(x => x.id === modelId);
     const badge = document.getElementById("modelBadge");
     if (badge) badge.className = "model-badge loaded";
     const badgeTxt = document.getElementById("modelBadgeText");
@@ -494,7 +703,6 @@ export async function loadModel() {
     const newChatBtn = document.getElementById("newChatBtn");
     if (newChatBtn) newChatBtn.style.display = "flex";
 
-    // Start a new chat session
     _currentChatId = genChatId();
     addWelcome(m, _useCore, _useCPU);
     const msgInput = document.getElementById("msgInput");
@@ -508,9 +716,9 @@ export async function loadModel() {
   } catch (err) {
     if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round">download</span> Download &amp; Load'; }
     if (msw) { msw.style.opacity = "1"; msw.style.pointerEvents = ""; }
-    const msg = (err.message || "").toLowerCase();
+    const msg2 = (err.message || "").toLowerCase();
     if (sub) {
-      if (msg.includes("webgpu") || !navigator.gpu) {
+      if (msg2.includes("webgpu") || !navigator.gpu) {
         sub.innerHTML = `<strong style="color:var(--red)">WebGPU not supported.</strong><br>Try the CPU fallback toggle, or switch to Chrome/Chromium.`;
       } else {
         sub.innerHTML = `<span style="color:var(--red)">Error: ${err.message || "Unknown error"}</span>`;
@@ -865,7 +1073,7 @@ export async function goHome() {
   if (newChatBtn2) newChatBtn2.style.display = "none";
   hideCoreStats();
   if (activeModelId) {
-    const m = MODELS.find(x => x.id === activeModelId);
+    const m = getAllModels().find(x => x.id === activeModelId);
     const badge = document.getElementById("modelBadge");
     if (badge) badge.className = "model-badge loaded";
     _selectedModelId = activeModelId;
@@ -914,19 +1122,18 @@ export function resumeChat() {
 async function buildModalBody() {
   const body = document.getElementById("modalBody");
   body.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.7rem">Checking cache…</div>';
-  const cached = await getCachedModelIds();
-  body.innerHTML = "";
+  const cached    = await getCachedModelIds();
+  const allModels = getAllModels();
+  body.innerHTML  = "";
 
-  // Info note
   const note = document.createElement("div"); note.className = "modal-note";
-  note.innerHTML = `<span class="material-icons-round">info</span><span>Tap a model to load it. <span style="color:var(--green)">●</span> = cached locally &amp; ready instantly.</span>`;
+  note.innerHTML = `<span class="material-icons-round">info</span><span>Tap a model to load it. <span style="color:var(--green)">●</span> = cached. <span style="color:var(--purple);font-size:.6rem;border:1px solid var(--purple);border-radius:3px;padding:1px 4px;vertical-align:middle">ACC</span> = Actalithic native engine.</span>`;
   body.appendChild(note);
 
-  // Group models same as picker
   const MODAL_GROUPS = [
-    { label: "Fast",     ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC"] },
-    { label: "Balanced", ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC"] },
-    { label: "Powerful", ids: ["DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
+    { label: "Light",    ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC", "gemma-3-4b-it.acc"] },
+    { label: "Middle",   ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC"] },
+    { label: "Advanced", ids: ["qwen2.5-7b-instruct.acc", "DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
   ];
 
   MODAL_GROUPS.forEach(g => {
@@ -936,20 +1143,26 @@ async function buildModalBody() {
     body.appendChild(grpLabel);
 
     g.ids.forEach(id => {
-      const m = MODELS.find(x => x.id === id);
+      const m = allModels.find(x => x.id === id);
       if (!m) return;
-      const isActive = m.id === activeModelId;
-      const isCached = cached.has(m.id);
+      const isActive  = m.id === activeModelId;
+      const isCached  = cached.has(m.id) || _isACCCached(m.id);
+      const isACC     = m.engine === "acc";
 
       const row = document.createElement("div");
       row.className = "modal-model-row" + (isActive ? " active-row" : "");
+
+      const accBadge = isACC
+        ? `<span style="font-size:.5rem;color:var(--purple);border:1px solid var(--purple);border-radius:3px;padding:1px 5px;vertical-align:middle">ACC</span>` : "";
+      const sourceChip = isACC
+        ? `<span class="info-chip" style="color:var(--purple);border-color:var(--purple);background:var(--purple-bg)"><span class="material-icons-round">auto_fix_high</span>Actalithic</span>` : "";
 
       row.innerHTML = `
         <div class="modal-model-dot"></div>
         <div class="modal-model-info">
           <div class="modal-model-name">
             ${isCached ? '<span class="material-icons-round" style="font-size:11px;color:var(--green)">circle</span>' : '<span class="material-icons-round" style="font-size:11px;color:var(--border2)">radio_button_unchecked</span>'}
-            ${m.name}
+            ${m.name} ${accBadge}
             ${runPill(m)}
             ${isActive ? '<span class="mc-tag green" style="font-size:.5rem">Active</span>' : ''}
           </div>
@@ -957,6 +1170,7 @@ async function buildModalBody() {
             <span>By ${m.creator}</span>
             <span class="info-chip"><span class="material-icons-round">memory</span>${m.ram} RAM</span>
             <span class="info-chip"><span class="material-icons-round">speed</span>${m.tok_range} tok/s</span>
+            ${sourceChip}
             ${isCached ? '<span class="info-chip" style="color:var(--green);border-color:var(--green-dim);background:var(--green-bg)"><span class="material-icons-round" style="font-size:10px">check_circle</span>Cached</span>' : ''}
           </div>
           <div class="modal-mem-bar" id="membar-${m.id}" style="display:none">
@@ -968,13 +1182,15 @@ async function buildModalBody() {
           </div>
         </div>
         <div class="modal-model-actions">
-          ${!isActive ? `<button class="mc-btn switch" onclick="switchModel('${m.id}')"><span class="material-icons-round">${isCached ? 'play_arrow' : 'swap_horiz'}</span> ${isCached ? 'Load' : 'Switch'}</button>` : ''}
+          ${!isActive ? `<button class="mc-btn switch" ondblclick="downloadACCBundle('${m.id}')" onclick="switchModel('${m.id}')">
+            <span class="material-icons-round">${isCached ? 'play_arrow' : 'swap_horiz'}</span> ${isCached ? 'Load' : 'Switch'}
+          </button>` : ''}
+          ${isACC && isCached ? `<button class="mc-btn" title="Download .acc bundle (for devs)" onclick="downloadACCBundle('${m.id}')" style="font-size:.58rem;padding:.3rem .5rem;color:var(--purple)"><span class="material-icons-round" style="font-size:12px">download</span></button>` : ''}
           ${isCached || isActive ? `<button class="mc-btn del" id="del-${m.id}" onclick="deleteModel('${m.id}')"><span class="material-icons-round">delete_outline</span></button>` : ''}
         </div>`;
       body.appendChild(row);
 
-      // Async: load memory usage for cached models
-      if (isCached) {
+      if (!isACC && isCached) {
         getMemoryUsageBytes(m.id).then(usedBytes => {
           const quotaMB = getMemoryQuota(m.id);
           const usedMB  = usedBytes / (1024 * 1024);
@@ -991,9 +1207,77 @@ async function buildModalBody() {
   });
 }
 
+// ── ACC bundle download (secret dev feature — double-click Load or click ⬇) ──
+// Exports a full .acc bundle from OPFS as downloadable files.
+// Developers can host these and ship pre-converted models to users.
+export async function downloadACCBundle(modelId) {
+  const m = getAllModels().find(x => x.id === modelId);
+  if (!m || m.engine !== "acc") return;
+
+  // Load from OPFS
+  let bundle;
+  try {
+    const root   = await navigator.storage.getDirectory();
+    const accDir = await root.getDirectoryHandle(modelId);
+    const readJ  = async (n) => (await (await (await accDir.getFileHandle(n)).getFile()).text());
+    const manifest  = JSON.parse(await readJ("manifest.json"));
+    const config    = JSON.parse(await readJ("config.json"));
+    let   tokenizer = null;
+    try { tokenizer = await readJ("tokenizer.json"); } catch {}
+    const shardsDir = await accDir.getDirectoryHandle("shards");
+    const shards = [];
+    for (let i = 0; i < manifest.num_shards; i++) {
+      const fh = await shardsDir.getFileHandle(`shard_${String(i).padStart(2,"0")}.bin`);
+      shards.push(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
+    }
+    bundle = { manifest, config, tokenizer, shards };
+  } catch (e) {
+    alert(`Model not cached yet. Load the model first, then download the .acc bundle.\n\n${e.message}`);
+    return;
+  }
+
+  // Prompt for save folder via FileSystem Access API or fall back to individual downloads
+  const name = modelId.replace(".acc", "");
+  try {
+    if (window.showDirectoryPicker) {
+      const dir = await window.showDirectoryPicker({ suggestedName: `${name}.acc`, mode: "readwrite" });
+      const writeFile = async (d, fname, data) => {
+        const fh = await d.getFileHandle(fname, { create: true });
+        const wr = await fh.createWritable();
+        await wr.write(new Blob([data]));
+        await wr.close();
+      };
+      await writeFile(dir, "manifest.json", JSON.stringify(bundle.manifest, null, 2));
+      await writeFile(dir, "config.json",   JSON.stringify(bundle.config, null, 2));
+      if (bundle.tokenizer) await writeFile(dir, "tokenizer.json", bundle.tokenizer);
+      const sd = await dir.getDirectoryHandle("shards", { create: true });
+      for (let i = 0; i < bundle.shards.length; i++) {
+        await writeFile(sd, `shard_${String(i).padStart(2,"0")}.bin`, bundle.shards[i]);
+      }
+      alert(`✓ ${name}.acc saved! ${bundle.shards.length} shard(s) + manifest + config.`);
+    } else {
+      // Fallback
+      const dl = (filename, data) => {
+        const url = URL.createObjectURL(new Blob([data]));
+        const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+      };
+      dl(`${name}_manifest.json`, JSON.stringify(bundle.manifest, null, 2));
+      dl(`${name}_config.json`,   JSON.stringify(bundle.config, null, 2));
+      if (bundle.tokenizer) dl(`${name}_tokenizer.json`, bundle.tokenizer);
+      for (let i = 0; i < bundle.shards.length; i++) {
+        await new Promise(r => setTimeout(r, 150));
+        dl(`${name}_shard_${String(i).padStart(2,"0")}.bin`, bundle.shards[i]);
+      }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") alert(`Download failed: ${e.message}`);
+  }
+}
+
 export function editMemoryQuota(modelId) {
   const current = getMemoryQuota(modelId);
-  const m = MODELS.find(x => x.id === modelId);
+  const m = getAllModels().find(x => x.id === modelId);
   const input = prompt(`Memory quota for ${m?.name || modelId} (MB):\nCurrent: ${current} MB\n\nEnter new limit (1–500 MB):`, current);
   if (input === null) return;
   const val = parseFloat(input);
@@ -1047,7 +1331,7 @@ export async function switchModel(modelId) {
 }
 
 export async function deleteModel(modelId) {
-  const mname = MODELS.find(x => x.id === modelId)?.name || modelId;
+  const mname = getAllModels().find(x => x.id === modelId)?.name || modelId;
   if (!confirm(`Delete cached files for ${mname}?\nThis frees storage and unloads it from RAM.`)) return;
   const btn = document.getElementById("del-" + modelId);
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
@@ -1180,7 +1464,7 @@ export async function newChat() {
   const msgs = document.getElementById('messages');
   if (msgs) msgs.innerHTML = '';
   // Show welcome again
-  const m = MODELS.find(x => x.id === activeModelId);
+  const m = getAllModels().find(x => x.id === activeModelId);
   if (m) addWelcome(m, _useCore, _useCPU);
   // Refresh sidebar
   renderChatSidebar();
@@ -1465,7 +1749,7 @@ export async function confirmRefreshCache() {
 
 // ── Model info popup ──────────────────────────────────────
 export function openModelInfo() {
-  const m = MODELS.find(x => x.id === activeModelId);
+  const m = getAllModels().find(x => x.id === activeModelId);
   if (!m) return;
   const url  = document.getElementById("modelInfoUrl");
   const name = document.getElementById("modelInfoName");
@@ -1557,4 +1841,5 @@ export function handleKey(e)   { if (e.key === "Enter" && !e.shiftKey) { e.preve
   window.openModelInfo         = openModelInfo;
   window.closeModelInfoModal   = closeModelInfoModal;
   window.closeModelInfoOutside = closeModelInfoOutside;
+  window.downloadACCBundle     = downloadACCBundle;
 })();
