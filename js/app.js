@@ -768,8 +768,8 @@ export async function sendMessage() {
 
     // ── Phase 1: silent buffer — let GPU run at full speed for 1 second ──
     // No DOM writes at all. Engine generates tokens as fast as possible.
-    const BURST_BUFFER_MS = 950;       // how long to collect before first render
-    const INTER_BURST_MS  = 700;       // subsequent bursts while still streaming
+    const BURST_BUFFER_MS = 3000;      // how long to collect before first render
+    const INTER_BURST_MS  = 2500;      // subsequent bursts while still streaming
     let bufferStart   = null;
     let lastBurstAt   = null;
     let renderedUpTo  = 0;             // char index of last rendered text

@@ -503,54 +503,261 @@ textarea#msgInput::placeholder{color:var(--muted)}
 /* ════════════════════════════════════════════════════════
    RESPONSIVE
 ════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════
+   MOBILE — full rework (max-width: 480px)
+   Desktop untouched. Every value here is deliberate.
+════════════════════════════════════════════════════════ */
 @media(max-width:480px){
-  header{padding:.5rem .85rem;gap:.4rem}
-  .header-brand img.logo-img{height:30px}
-  .icon-btn{width:30px;height:30px}
-  .icon-btn .material-icons-round{font-size:15px}
-  .model-badge{max-width:80px;font-size:.56rem;padding:3px 8px}
-  /* Load screen — more breathing room between every element */
-  #loadScreen{padding:1.2rem .9rem 5rem;gap:0}
-  .load-desktop-cols{gap:0;padding:0 .1rem}
-  .load-col-right{gap:1.4rem;padding:1rem 0 .5rem}
-  .load-col-left{gap:1.2rem;padding:.5rem 0 1rem}
-  .load-logo-img{height:min(110px,32vw);margin-bottom:.2rem}
-  .hero-brand-text{font-size:clamp(2.2rem,17vw,3.4rem);margin-bottom:.1rem}
-  .load-hero{gap:.55rem;margin-bottom:.2rem}
-  .load-title{font-size:.9rem}
-  .load-sub{font-size:.73rem;line-height:1.8}
-  .model-select-card{border-radius:10px}
-  .load-btn{font-size:.86rem;padding:.92rem 2rem;margin-top:.9rem;border-radius:8px}
-  /* Engine options — more readable */
-  .toggle-section{gap:.75rem}
-  .exp-row{padding:1rem 1.1rem;gap:.9rem;border-radius:8px}
-  .exp-label-title{font-size:.78rem;gap:.4rem}
-  .exp-label-sub{font-size:.67rem;margin-top:5px;line-height:1.65}
-  /* Speed table */
-  .speed-table{border-radius:10px}
-  .speed-table-head{padding:.55rem 1rem}
-  .speed-row{padding:.6rem 1rem}
-  .speed-device{font-size:.65rem}
-  .speed-val{font-size:.62rem}
-  /* Disclaimer */
-  .disclaimer-note{font-size:.65rem;padding:.85rem 1rem;border-radius:10px}
-  /* Chat screen */
-  .messages{padding:1rem .9rem 1rem;gap:1rem}
-  .msg-col{max-width:87%}
-  .bubble{font-size:.88rem;padding:.75rem .95rem;line-height:1.85}
-  .input-bar{padding:.55rem .9rem .65rem;gap:.45rem}
-  textarea#msgInput{font-size:16px;padding:.65rem .9rem;border-radius:12px}
-  .send-btn{width:44px;height:44px;min-width:44px;border-radius:12px}
-  .info-bar{font-size:.54rem;padding:0 .9rem .5rem}
-  .core-stats-bar{padding:.4rem .9rem}
-  .core-split-val{min-width:80px;font-size:.54rem}
+
+  /* ── Header ── */
+  header{
+    padding:.6rem 1rem;
+    gap:.5rem;
+  }
+  .header-brand img.logo-img{height:28px}
+  .icon-btn{width:34px;height:34px}
+  .icon-btn .material-icons-round{font-size:16px}
+  .model-badge{
+    max-width:100px;font-size:.58rem;
+    padding:4px 10px;gap:5px;
+  }
+
+  /* ── Load screen outer shell ── */
+  #loadScreen{
+    padding:0;
+    gap:0;
+    overflow-y:auto;
+    height:auto;
+    align-items:stretch;
+  }
+
+  /* ── Two-col becomes single stacked col ── */
+  .load-desktop-cols{
+    flex-direction:column;
+    align-items:stretch;
+    padding:0;
+    gap:0;
+    width:100%;
+  }
+
+  /* ── Right col (branding + picker) — shown first ── */
+  .load-col-right{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:1.6rem;
+    padding:2rem 1.25rem 1.5rem;
+    background:var(--bg);
+    border-bottom:1px solid var(--border);
+    order:1;
+    width:100%;
+  }
+
+  /* ── Left col (engine options) — shown second ── */
+  .load-col-left{
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:1.4rem;
+    padding:1.75rem 1.25rem 2rem;
+    background:var(--bg2);
+    order:2;
+    width:100%;
+  }
+
+  /* ── Logo ── */
+  .load-logo-wrap{justify-content:center;width:100%}
+  .load-logo-img{height:80px;width:auto}
+
+  /* ── "LocalLLM" hero title ── */
+  .hero-brand-text{
+    font-size:3rem;
+    letter-spacing:-.06em;
+    justify-content:center;
+    width:100%;
+    margin:0;
+  }
+
+  /* ── Tagline block ── */
+  .load-hero{
+    gap:.6rem;
+    align-items:center;
+    text-align:center;
+    width:100%;
+    max-width:100%;
+    margin:0;
+  }
+  .load-title{font-size:.95rem;letter-spacing:-.01em}
+  .load-sub{
+    font-size:.76rem;line-height:1.85;
+    max-width:100%;margin:0;
+  }
+
+  /* ── Progress bar ── */
+  .progress-wrap{max-width:100%;width:100%}
+
+  /* ── Model picker card ── */
+  .model-select-card{
+    width:100%;max-width:100%;
+    border-radius:12px;
+  }
+  .model-picker-btn{
+    padding:.9rem 2.8rem .9rem 1rem;
+    font-size:.88rem;
+    min-height:52px;
+  }
+  .model-info-row{
+    padding:.6rem 1rem;
+    gap:.45rem;
+    font-size:.62rem;
+    flex-wrap:wrap;
+  }
+
+  /* ── Download button ── */
+  .load-btn{
+    width:100%;max-width:100%;
+    font-size:.9rem;
+    padding:1rem 1.5rem;
+    border-radius:10px;
+    min-height:54px;
+    margin-top:0;
+  }
+
+  /* ── Left col title ── */
+  .load-col-title{
+    font-size:.62rem;letter-spacing:.14em;
+    margin-bottom:-.2rem;
+  }
+
+  /* ── Engine toggle rows ── */
+  .toggle-section{gap:.9rem;width:100%}
+  .exp-row{
+    padding:1.1rem 1.1rem;
+    gap:1rem;
+    border-radius:10px;
+    align-items:flex-start;
+  }
+  .exp-label-title{
+    font-size:.82rem;
+    gap:.45rem;
+    line-height:1.5;
+  }
+  .exp-label-sub{
+    font-size:.7rem;
+    margin-top:6px;
+    line-height:1.7;
+  }
+  /* Move toggle to top-right */
+  .toggle{flex-shrink:0;align-self:flex-start;margin-top:2px}
+
+  /* ── Speed table ── */
+  .speed-table{width:100%;border-radius:12px}
+  .speed-table-head{
+    padding:.65rem 1.1rem;
+    font-size:.6rem;
+  }
+  .speed-row{padding:.65rem 1.1rem}
+  .speed-device{font-size:.68rem}
+  .speed-val{font-size:.65rem}
+
+  /* ── Disclaimer ── */
+  .disclaimer-note{
+    font-size:.68rem;
+    padding:1rem 1.1rem;
+    border-radius:12px;
+    gap:.7rem;
+    line-height:1.75;
+  }
+
+  /* ── Mobile warning banner ── */
+  .mobile-banner{
+    padding:.75rem 1.25rem;
+    font-size:.74rem;
+    gap:.65rem;
+    line-height:1.6;
+  }
+
+  /* ══ CHAT SCREEN ══ */
+
+  /* ── Messages area ── */
+  .messages{
+    padding:1.25rem 1rem 1rem;
+    gap:1.25rem;
+  }
+
+  /* ── Message rows ── */
+  .msg-row{gap:.6rem}
+  .avatar{width:28px;height:28px;min-width:28px}
+  .msg-col{max-width:84%}
+  .msg-sender{font-size:.56rem;margin-bottom:1px}
+
+  /* ── Bubbles ── */
+  .bubble{
+    font-size:.9rem;
+    padding:.8rem 1rem;
+    line-height:1.85;
+    border-radius:3px 14px 14px 14px;
+  }
+  .msg-row.user .bubble{
+    border-radius:14px 3px 14px 14px;
+  }
+
+  /* ── Think block ── */
+  .think-header{padding:.55rem .9rem}
+  .think-content{font-size:.75rem;padding:.5rem .8rem .6rem}
+
+  /* ── Input bar ── */
+  .bottom-area{
+    padding-bottom:env(safe-area-inset-bottom, 8px);
+  }
+  .input-bar{
+    padding:.65rem 1rem .75rem;
+    gap:.55rem;
+    align-items:flex-end;
+  }
+  textarea#msgInput{
+    font-size:16px;
+    padding:.7rem .95rem;
+    border-radius:14px;
+    min-height:50px;
+    line-height:1.55;
+  }
+  .send-btn{
+    width:46px;height:46px;min-width:46px;
+    border-radius:14px;
+    flex-shrink:0;
+  }
+  .stop-btn{
+    width:42px;height:42px;border-radius:12px;
+    flex-shrink:0;
+  }
+
+  /* ── Info bar ── */
+  .info-bar{
+    font-size:.55rem;
+    padding:.1rem 1rem .55rem;
+    letter-spacing:.04em;
+  }
+
+  /* ── Core stats bar ── */
+  .core-stats-bar{padding:.45rem 1rem .4rem}
+  .core-stats-header{font-size:.6rem}
+  .core-split-val{font-size:.56rem;min-width:70px}
+
+  /* ── Chat sidebar ── */
+  .chat-sidebar{width:100%;max-width:100%}
+  .chat-sidebar-head{padding:.85rem 1rem}
+  .chat-list-item{padding:.75rem 1rem}
+  .chat-list-title{font-size:.8rem}
 }
 @media(min-width:600px){
   header{padding:.75rem 1.5rem;gap:.8rem}
   .header-brand img.logo-img{height:44px}
   .icon-btn{width:34px;height:34px}
   .model-badge{max-width:200px}
-  #loadScreen{padding:2.5rem 1.5rem 5rem;gap:1.6rem}
+  /* #loadScreen padding handled by col-level padding in 600-899 range */
+  #loadScreen{padding:0;gap:0}
   .messages{padding:1.75rem 1.5rem;gap:1.25rem}
   .input-bar{padding:.65rem 1.5rem .9rem}
   .core-stats-bar{padding:.55rem 1.5rem .45rem}
@@ -1103,18 +1310,31 @@ header .logo-img { /* sizes set by responsive rules above */ }
 
 
 /* ── Mobile explicit resets to prevent desktop CSS bleed ── */
+/* ════════════════════════════════════════════════════════
+   TABLET / NARROW — layout reset (max-width: 899px)
+   Stacks the two columns, removes desktop-only sizing.
+════════════════════════════════════════════════════════ */
 @media(max-width: 899px) {
   body { align-items: center; }
-  .model-select-card, .progress-wrap, .disclaimer-note, .speed-table, .toggle-section, .load-btn { max-width: 100%; }
   header { max-width: 840px; }
+
+  /* All max-width caps lifted — children go full width */
+  .model-select-card,
+  .progress-wrap,
+  .disclaimer-note,
+  .speed-table,
+  .toggle-section,
+  .load-btn { max-width: 100%; }
+
   #loadScreen {
     max-width: 100%;
     flex-direction: column;
     align-items: center;
-    padding: 1.5rem 1rem 4rem;
+    padding: 0;
     overflow-y: auto;
     height: auto;
   }
+
   .load-desktop-cols {
     flex-direction: column;
     align-items: stretch;
@@ -1123,24 +1343,39 @@ header .logo-img { /* sizes set by responsive rules above */ }
     padding: 0;
     width: 100%;
   }
+
+  /* Default stacked col styles (overridden per breakpoint below) */
   .load-col-right,
   .load-col-left {
     width: 100%;
     max-width: 100%;
     overflow: visible;
-    border: none;
-    padding: 0.75rem 0;
-    background: transparent;
     order: unset;
   }
+
+  /* Right col centres its children on narrow screens */
   .load-col-right {
     align-items: center;
     text-align: center;
+    padding: 2.5rem 2rem 1.5rem;
+    gap: 1.6rem;
+    border-left: none;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
   }
   .load-col-right .load-hero {
     align-items: center;
     text-align: center;
+    max-width: 100%;
   }
+
+  /* Left col full-width */
+  .load-col-left {
+    padding: 2rem 2rem 2.5rem;
+    gap: 1.4rem;
+    background: var(--bg2);
+  }
+
   #chatScreen { max-width: 840px; }
 }
 /* ═══ Mobile overflow fixes for picker ═══ */
