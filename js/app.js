@@ -21,7 +21,7 @@ const IS_MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini
   || window.innerWidth <= 768;
 
 // Mobile config: speed over quality
-const MOBILE_MAX_TOKENS  = 512;   // enough for good answers on mobile
+const MOBILE_MAX_TOKENS  = 1024;  // enough for good answers on mobile
 const DESKTOP_MAX_TOKENS = 2048;  // full answers on desktop
 const MOBILE_TEMPERATURE  = 0.5;
 const DESKTOP_TEMPERATURE = 0.7;
@@ -351,17 +351,17 @@ Just answer. Be direct. Be warm. Never start a reply by restating what the user 
   const memoryInstructions = `
 
 MEMORY PROTOCOL (critical — always follow):
-- When the user tells you their name, IMMEDIATELY save it: [REMEMBER: user_name = <name>]
+- When the user tells you their name, IMMEDIATELY save it: [REMEMBER: user_name = <n>]
 - When you learn their location, job, hobby, language, or ongoing project, save it.
 - When the conversation goes somewhere specific (topic, task, goal), save the context:
   [REMEMBER: current_topic = <brief description>]
 - Update existing keys by writing the same key with a new value.
 - Save keys in snake_case English, short and descriptive.
-- Tag format: [REMEMBER: key = value] — hidden from user, processed by the app.
+- Tag format: [REMEMBER: key = value] — invisible to user, processed silently by the app.
+- CRITICAL: Put ALL [REMEMBER: ...] tags on their own line at the very END of your reply, after all visible text. Never place them inline or mid-sentence.
 - Do NOT save trivial or one-time facts. Max ~20 keys total.
-Examples of what to save:
-  [REMEMBER: user_name = Günter]
-  [REMEMBER: user_language = German]
+Example — tags always last, each on its own line:
+  Sure, I can help with that!
   [REMEMBER: user_hobby = woodworking]
   [REMEMBER: current_topic = building a birdhouse]`;
 
@@ -645,8 +645,9 @@ function renderBubble(el, rawText) {
     const WORD_STAGGER_MS = 55;   // gap between each word appearing
     const WORD_FADE_MS    = 280;  // how long each word's fade lasts
 
-    // Tokenize: split on whitespace boundaries but keep the whitespace attached
-    const tokens = delta.match(/\S+\s*/g) || [delta];
+    // Tokenize: split into [optional whitespace + word] chunks so leading
+    // spaces are never dropped at delta boundaries (fixes missing-space bug)
+    const tokens = delta.match(/\s*\S+/g) || [delta];
 
     // Count existing word-spans to continue stagger sequence
     const existingWords = state.mainSpan.querySelectorAll(".word-token").length;
@@ -745,7 +746,7 @@ export async function sendMessage() {
     // Tight sampling = fewer candidates scored per token = faster decode
     // top_k caps the vocab search; lower = faster with minimal quality loss at these temps
     const coreParams = _useCore
-      ? { top_k: 16, top_p: 0.85, temperature: 0.55, repetition_penalty: 1.0 }
+      ? { top_k: 40, top_p: 0.90, temperature: 0.55, repetition_penalty: 1.03 }
       : { top_k: 32, top_p: topP,  temperature: temp,  repetition_penalty: 1.03 };
     const stream = await engine.chat.completions.create({
       messages: msgs, stream: true,
@@ -1339,9 +1340,10 @@ async function getMemoryUsageBytes(modelId) {
 }
 
 // Parse [REMEMBER: key = value] from AI output
+// [^\]]* matches anything except ] so multiline values are captured correctly
 function parseMemoryCommands(text) {
   const cmds = [];
-  const re = /\[REMEMBER:\s*(.+?)\s*=\s*(.+?)\]/g;
+  const re = /\[REMEMBER:\s*([^\]=]+?)\s*=\s*([^\]]+?)\s*\]/gi;
   let m;
   while ((m = re.exec(text)) !== null) {
     cmds.push({ key: m[1].trim(), value: m[2].trim() });
@@ -1350,8 +1352,13 @@ function parseMemoryCommands(text) {
 }
 
 // Strip [REMEMBER: ...] tags from displayed text
+// Uses [^\]]* so it handles newlines/multiline tags, replaces with " " not ""
+// so adjacent words don't merge when a tag sits between them
 function stripMemoryCommands(text) {
-  return text.replace(/\[REMEMBER:\s*.+?\s*=\s*.+?\]/g, "").trim();
+  return text
+    .replace(/\[REMEMBER:[^\]]*\]/gi, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 // ── Refresh cache ────────────────────────────────────────
