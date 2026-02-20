@@ -1,325 +1,156 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0c0c10" media="(prefers-color-scheme: dark)">
-<title>LocalLLM by Actalithic</title>
+<title>Work in Progress — Actalithic</title>
 <link rel="icon" type="image/png" href="https://i.ibb.co/DfYLtMhQ/favicon.png">
-<link rel="apple-touch-icon" href="https://i.ibb.co/DfYLtMhQ/favicon.png">
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
-<script>
-(function(){
-  var s=localStorage.getItem('llm-theme');
-  document.documentElement.setAttribute('data-theme',s||'dark');
-})();
-</script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;-webkit-text-size-adjust:100%}
+body{
+  background:#b80000;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100dvh;padding:2rem 1.5rem;
+  font-family:'DM Mono',monospace;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+  position:relative;
+}
+
+/* Noise overlay */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity:.35;pointer-events:none;z-index:0;
+}
+
+/* Vignette */
+body::after{
+  content:'';position:fixed;inset:0;
+  background:radial-gradient(ellipse 80% 80% at 50% 50%, transparent 40%, rgba(0,0,0,.35) 100%);
+  pointer-events:none;z-index:0;
+}
+
+.content{
+  position:relative;z-index:1;
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+}
+
+.err-logo{
+  width:min(320px,78vw);
+  margin-bottom:2.5rem;
+  filter:drop-shadow(0 4px 32px rgba(0,0,0,.4));
+  animation:fadeUp .5s cubic-bezier(.34,1.2,.64,1) both;
+}
+
+.err-divider{
+  width:min(120px,30vw);height:1px;
+  background:rgba(255,255,255,.2);
+  margin-bottom:2rem;
+  animation:fadeUp .5s .06s cubic-bezier(.34,1.2,.64,1) both;
+}
+
+.err-code{
+  font-family:'Syne',sans-serif;font-weight:800;
+  font-size:clamp(3.2rem,14vw,6rem);
+  color:#fff;letter-spacing:-.06em;line-height:1;
+  text-shadow:0 4px 40px rgba(0,0,0,.3), 0 1px 0 rgba(255,255,255,.12);
+  animation:fadeUp .55s .08s cubic-bezier(.34,1.2,.64,1) both;
+}
+
+.err-msg{
+  font-family:'Syne',sans-serif;font-weight:700;
+  font-size:clamp(1rem,4vw,1.45rem);
+  color:rgba(255,255,255,.9);
+  letter-spacing:-.015em;margin-top:.55rem;
+  animation:fadeUp .55s .16s cubic-bezier(.34,1.2,.64,1) both;
+}
+
+.err-sub{
+  font-size:.78rem;
+  color:rgba(255,255,255,.5);
+  margin-top:.55rem;
+  letter-spacing:.03em;
+  line-height:1.8;
+  max-width:360px;
+  animation:fadeUp .55s .22s cubic-bezier(.34,1.2,.64,1) both;
+}
+
+.err-sub small{
+  display:block;
+  margin-top:.75rem;
+  font-size:.7rem;
+  color:rgba(255,255,255,.35);
+}
+
+.err-actions{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
+  gap:.55rem;margin-top:2.2rem;
+  animation:fadeUp .55s .3s cubic-bezier(.34,1.2,.64,1) both;
+}
+
+.err-btn{
+  display:inline-flex;align-items:center;gap:.55rem;
+  font-family:'Syne',sans-serif;font-weight:700;font-size:.88rem;
+  padding:.85rem 2.2rem;border-radius:6px;
+  background:rgba(255,255,255,.15);
+  border:1.5px solid rgba(255,255,255,.35);
+  color:#fff;text-decoration:none;
+  transition:all .18s;letter-spacing:.04em;
+  backdrop-filter:blur(8px);
+  white-space:nowrap;
+}
+.err-btn:hover{
+  background:rgba(255,255,255,.26);
+  border-color:rgba(255,255,255,.6);
+  transform:translateY(-2px);
+  box-shadow:0 6px 20px rgba(0,0,0,.25)
+}
+
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(18px)}
+  to{opacity:1;transform:none}
+}
+</style>
 </head>
+
 <body>
-<!-- ── MODEL MANAGER MODAL ── -->
-<div class="modal-overlay" id="modelModal" onclick="closeModalOutside(event)">
-  <div class="modal">
-    <div class="modal-handle"></div>
-    <div class="modal-head">
-      <div class="modal-title">Model Manager</div>
-      <button class="modal-close" onclick="closeModal()"><span class="material-icons-round">close</span></button>
-    </div>
-    <div class="modal-body" id="modalBody"></div>
-    <div class="modal-foot">
-      <a class="modal-foot-convert" href="acc-converter.html" target="_blank" title="Convert your own models to .acc format">
-        <span class="material-icons-round">auto_fix_high</span> Convert your own model
-      </a>
-      <span class="modal-foot-text"><span class="material-icons-round" style="font-size:10px;color:var(--green);vertical-align:middle">circle</span> cached &nbsp;·&nbsp; <span class="material-icons-round" style="font-size:10px;color:var(--border2);vertical-align:middle">radio_button_unchecked</span> not downloaded</span>
-      <button class="modal-refresh-btn" onclick="openRefreshDialog()">
-        <span class="material-icons-round">refresh</span> Refresh cache
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- ── REFRESH CACHE WARNING DIALOG ── -->
-<div class="refresh-dialog-overlay" id="refreshDialog">
-  <div class="refresh-dialog">
-    <div class="refresh-dialog-icon"><span class="material-icons-round" style="font-size:2rem;color:var(--blue)">refresh</span></div>
-    <div class="refresh-cache-size" id="refreshCacheSize">
-      <span class="material-icons-round">storage</span>
-      <span>Calculating cache size…</span>
-    </div>
-    <div class="refresh-dialog-title">Refresh to latest version?</div>
-    <div class="refresh-dialog-body">
-      If <strong>actalithic.github.io</strong> has shipped an update, this clears the service worker cache so the new version loads on next visit — just like a hard refresh on a new device.
-    </div>
-    <div class="refresh-dialog-warn">
-      <strong>All downloaded models will also be deleted.</strong><br>
-      Every AI model cached locally will be removed and must be re-downloaded before you can chat again. Only do this if you need the latest app version or want to free up space.
-    </div>
-    <div class="refresh-dialog-actions">
-      <button class="refresh-dialog-cancel" onclick="closeRefreshDialog()">Cancel</button>
-      <button class="refresh-dialog-confirm" onclick="confirmRefreshCache()">Refresh &amp; clear</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── MODEL SOURCE INFO POPUP ── -->
-<div class="modal-overlay" id="modelInfoModal" onclick="closeModelInfoOutside(event)">
-  <div class="modal">
-    <div class="modal-handle"></div>
-    <div class="modal-head">
-      <div class="modal-title">Model Source</div>
-      <button class="modal-close" onclick="closeModelInfoModal()"><span class="material-icons-round">close</span></button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-note" style="flex-direction:column;gap:.5rem;align-items:flex-start">
-        <div>
-          <div class="model-info-popup-label">Active model</div>
-          <div class="model-info-popup-name" id="modelInfoName"></div>
-        </div>
-        <div>
-          <div class="model-info-popup-label">Downloaded from</div>
-          <a class="model-info-popup-url" id="modelInfoUrl" target="_blank" rel="noopener"></a>
-        </div>
-        <div style="font-size:.63rem;color:var(--muted);border-top:1px solid var(--border);padding-top:.55rem;width:100%;line-height:1.7">
-          Models are quantized by MLC AI and served via Hugging Face. Cached in your browser after first download. 100% local — no data ever leaves your device.
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ── HEADER ── -->
-<header>
-  <div class="header-brand">
-    <!-- Light mode logo -->
-    <img class="logo-img logo-light"
-      src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png"
-      alt="LocalLLM by Actalithic">
-    <!-- Dark mode logo -->
-    <img class="logo-img logo-dark"
+  <div class="content">
+    <img class="err-logo"
       src="https://i.ibb.co/tpSTrg7Z/whitelogo.png"
-      alt="LocalLLM by Actalithic">
-  </div>
-  <div class="header-right">
-    <button id="homeBtn" class="icon-btn" onclick="goHome()" title="Home" style="display:none">
-      <span class="material-icons-round">home</span>
-    </button>
-    <button id="chatsBtn" class="icon-btn" onclick="openChatSidebar()" title="Chat history" style="display:none">
-      <span class="material-icons-round">history</span>
-    </button>
-    <button id="newChatBtn" class="icon-btn" onclick="newChat()" title="New chat" style="display:none">
-      <span class="material-icons-round">add_comment</span>
-    </button>
-    <a class="icon-btn bsky" href="https://bsky.app/profile/actalithic.bsky.social" target="_blank" rel="noopener" title="Bluesky">
-      <svg viewBox="0 0 600 530" xmlns="http://www.w3.org/2000/svg"><path d="m135.72 44.03c66.496 49.921 138.02 151.14 164.28 205.46 26.262-54.316 97.782-155.54 164.28-205.46 47.98-36.021 125.72-63.892 125.72 24.795 0 17.712-10.155 148.79-16.111 170.07-20.703 73.984-96.144 92.854-163.25 81.433 117.3 19.964 147.14 86.092 82.697 152.22-122.39 125.59-175.91-31.511-189.63-71.766-2.514-7.3797-3.6904-10.832-3.7077-7.8964-0.0174-2.9357-1.1937 0.51669-3.7077 7.8964-13.714 40.255-67.233 197.36-189.63 71.766-64.444-66.128-34.605-132.26 82.697-152.22-67.108 11.421-142.55-7.4491-163.25-81.433-5.9562-21.282-16.111-152.36-16.111-170.07 0-88.687 77.742-60.816 125.72-24.795z" fill="currentColor"/></svg>
-    </a>
-    <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme">
-      <span class="material-icons-round" id="themeIcon">light_mode</span>
-    </button>
-    <div class="model-badge" id="modelBadge" onclick="openModal()" title="Models">
-      <span class="material-icons-round">memory</span>
-      <span id="modelBadgeText">no model</span>
-    </div>
-  </div>
-</header>
+      alt="Actalithic"
+      onerror="this.style.opacity='.4'"
+    >
 
-<div class="offline-banner" id="offlineBanner">
-  <span class="material-icons-round">wifi_off</span>
-  Offline — inference works normally, new downloads unavailable.
-</div>
+    <div class="err-divider"></div>
 
-<div class="mobile-banner" id="mobileBanner" style="display:none">
-  <span class="material-icons-round">smartphone</span>
-  <div>
-    <strong>Phone detected</strong> — Llama 3.2 3B selected automatically for best speed.
-    Heavier models may freeze your device. Tap <strong>■ Stop</strong> anytime to abort a response.
-  </div>
-</div>
+    <div class="err-code">WIP</div>
+    <div class="err-msg">Work in Progress</div>
 
-<!-- ── LOAD SCREEN ── -->
-<div id="loadScreen">
-  <!-- ── TWO-COLUMN LAYOUT (stacks on mobile, side-by-side on desktop) ── -->
-  <div class="load-desktop-cols">
-
-    <!-- RIGHT column: branding + model picker (shown first on mobile too) -->
-    <div class="load-col load-col-right">
-
-      <!-- Single logo — theme-aware, shown once -->
-      <div class="load-logo-wrap">
-        <img class="load-logo-img load-logo-light"
-          src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png"
-          alt="LocalLLM by Actalithic">
-        <img class="load-logo-img load-logo-dark"
-          src="https://i.ibb.co/tpSTrg7Z/whitelogo.png"
-          alt="LocalLLM by Actalithic">
-      </div>
-
-      <!-- Brand name -->
-      <div class="hero-brand-text">
-        <span class="hero-local">Local</span><span class="hero-llm">LLM</span>
-      </div>
-
-      <!-- Tagline + subtitle -->
-      <div class="load-hero">
-        <div class="load-title">100% local. Zero server. Zero API.</div>
-        <div class="load-sub" id="loadSub">
-          Runs entirely in your browser via WebGPU. First download is cached permanently — subsequent loads are instant.
-        </div>
-      </div>
-
-      <!-- Progress bar -->
-      <div class="progress-wrap" id="progressWrap">
-        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-        <div class="progress-row">
-          <div class="progress-status" id="progressStatus">Initializing…</div>
-          <div class="progress-label" id="progressLabel">0%</div>
-        </div>
-      </div>
-
-      <!-- Model picker -->
-      <div class="model-select-card" id="modelSelectWrap">
-        <div id="modelPickerWrap"></div>
-        <select id="modelSelect" aria-hidden="true" tabindex="-1">
-          <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC" selected>Llama 3.2 3B</option>
-          <option value="Mistral-7B-Instruct-v0.3-q4f16_1-MLC">Mistral 7B</option>
-          <option value="DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC">DeepSeek R1 8B</option>
-        </select>
-        <div class="model-info-row" id="modelInfoRow"></div>
-      </div>
-
-      <button class="load-btn" id="loadBtn" onclick="loadModel()">
-        <span class="material-icons-round">download</span>
-        Download &amp; Load
-      </button>
+    <div class="err-sub">
+      We're currently updating our service.<br>
+      Things may be temporarily unavailable while we deploy improvements.
+      <small>
+        This outage can take a few hours to a few days.<br>
+        Thank you for your patience.
+      </small>
     </div>
 
-    <!-- LEFT column: engine options + speed table (below on mobile, left on desktop) -->
-    <div class="load-col load-col-left">
-      <div class="load-col-title">Engine Options</div>
-
-      <div class="toggle-section">
-        <div class="exp-row">
-          <div class="exp-label">
-            <div class="exp-label-title">ActalithicCore <span class="core-badge">Actalithic</span></div>
-            <div class="exp-label-sub">Fast hybrid GPU+CPU processing. Offloads excess layers to RAM — runs 7B+ on 4–6 GB VRAM. Targets ~5 tok/s on 8B, 7–12 tok/s on 7B, 15–20 tok/s on 3B. Best for mid-range GPUs.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="coreToggle"><span class="toggle-slider"></span></label>
-        </div>
-        <div class="exp-row">
-          <div class="exp-label">
-            <div class="exp-label-title">CPU / WASM fallback <span class="exp-badge">Experimental</span></div>
-            <div class="exp-label-sub">No GPU required. Runs via WebAssembly. Expect ~1–3 tok/s.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="cpuToggle"><span class="toggle-slider"></span></label>
-        </div>
-        <div class="exp-row" id="thinkToggleRow">
-          <div class="exp-label">
-            <div class="exp-label-title">Enable thinking <span class="exp-badge" style="color:var(--blue);border-color:var(--blue);background:var(--blue-bg)">DeepSeek R1</span></div>
-            <div class="exp-label-sub">Shows a collapsible reasoning block before answers. More accurate on complex questions, slightly slower.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="thinkToggle" checked><span class="toggle-slider"></span></label>
-        </div>
-      </div>
-
-      <div class="speed-table">
-        <div class="speed-table-head">Expected speed by device (tokens / sec)</div>
-        <div class="speed-row"><div class="speed-device">Dedicated GPU (RTX 3060+)</div><div class="speed-val" id="speed-dedicated">—</div></div>
-        <div class="speed-row"><div class="speed-device">Steam Deck (RDNA2 iGPU)</div><div class="speed-val" id="speed-steamdeck">—</div></div>
-        <div class="speed-row"><div class="speed-device">Laptop integrated GPU</div><div class="speed-val" id="speed-laptop">—</div></div>
-        <div class="speed-row"><div class="speed-device">Phone (Snapdragon)</div><div class="speed-val" id="speed-phone">—</div></div>
-        <div class="speed-row"><div class="speed-device">CPU / WASM fallback</div><div class="speed-val" id="speed-cpu">—</div></div>
-        <div class="speed-row"><div class="speed-device">ActalithicCore <span style="font-size:.6em;color:var(--purple)">(hybrid)</span></div><div class="speed-val" id="speed-core">—</div></div>
-      </div>
-
-      <div class="disclaimer-note">
-        <span class="material-icons-round">info</span>
-        <span>Models are created by Meta, Mistral AI, and DeepSeek. Actalithic does not own or take responsibility for model outputs. Downloads are sourced via MLC AI and Hugging Face.</span>
-      </div>
-    </div>
-
-  </div><!-- /load-desktop-cols -->
-</div>
-
-<!-- ── CHAT SCREEN ── -->
-<div id="chatScreen">
-  <div class="messages" id="messages"></div>
-  <div class="bottom-area">
-
-    <div id="coreStatsBar" class="core-stats-bar" style="display:none">
-      <div class="core-stats-header">
-        <span class="material-icons-round" style="font-size:12px">memory</span>
-        ActalithicCore
-        <span style="margin-left:auto;color:var(--purple);text-transform:none;letter-spacing:0;font-size:.6rem;font-weight:600" id="coreTokSpeed"></span>
-        <span style="color:var(--muted);text-transform:none;letter-spacing:0;font-size:.58rem;margin-left:.5rem" id="coreSaved"></span>
-      </div>
-      <div class="core-split-row">
-        <div class="core-split-label">GPU <span id="coreGpuPct"></span></div>
-        <div class="core-bar-wrap"><div class="core-bar gpu-bar" id="coreGpuBar"></div></div>
-        <div class="core-split-val" id="coreGpuRam"></div>
-      </div>
-      <div class="core-split-row">
-        <div class="core-split-label">CPU <span id="coreCpuPct"></span></div>
-        <div class="core-bar-wrap"><div class="core-bar cpu-bar" id="coreCpuBar"></div></div>
-        <div class="core-split-val" id="coreCpuRam"></div>
-      </div>
-    </div>
-
-    <div class="input-bar">
-      <textarea id="msgInput" placeholder="Message LocalLLM…" rows="1"
-        onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-      <button class="stop-btn" id="stopBtn" onclick="stopGeneration()" title="Stop generation" style="display:none">
-        <span class="material-icons-round">stop</span>
-      </button>
-      <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-        <span class="material-icons-round">send</span>
-      </button>
-    </div>
-    <div class="info-bar">
-      Actalithic LocalLLM &nbsp;·&nbsp; Running locally &nbsp;·&nbsp; <span id="tokenSpeed"></span>
-    </div>
-  </div>
-</div>
-
-<!-- ── CHAT SIDEBAR ── -->
-<div class="chat-sidebar-overlay" id="chatSidebarOverlay" onclick="closeChatSidebar()"></div>
-<div class="chat-sidebar" id="chatSidebar">
-  <div class="chat-sidebar-head">
-    <div class="chat-sidebar-title">Chat History</div>
-    <button class="chat-sidebar-close" onclick="closeChatSidebar()"><span class="material-icons-round">close</span></button>
-  </div>
-  <div class="chat-sidebar-new" onclick="newChat()">
-    <span class="material-icons-round">add</span> New chat
-  </div>
-  <div class="chat-list" id="chatList"></div>
-</div>
-
-<script src="js/theme.js" type="module"></script>
-<script src="js/app.js" type="module"></script>
-
-<!-- ── FOOTER ── -->
-<footer class="site-footer">
-  <div class="footer-inner">
-    <img class="footer-logo footer-logo-light"
-      src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png"
-      alt="LocalLLM by Actalithic">
-    <img class="footer-logo footer-logo-dark"
-      src="https://i.ibb.co/tpSTrg7Z/whitelogo.png"
-      alt="LocalLLM by Actalithic">
-    <span class="footer-copy">© 2026 Actalithic · LocalLLM</span>
-    <div class="footer-links">
-      <a class="footer-link" href="blog.html">Blog</a>
-      <span class="footer-sep">·</span>
-      <a class="footer-link" href="acc-converter.html">ACC Converter</a>
-      <span class="footer-sep">·</span>
-      <a class="footer-link" href="https://bsky.app/profile/actalithic.bsky.social" target="_blank" rel="noopener">
-        <svg viewBox="0 0 600 530" xmlns="http://www.w3.org/2000/svg"><path d="m135.72 44.03c66.496 49.921 138.02 151.14 164.28 205.46 26.262-54.316 97.782-155.54 164.28-205.46 47.98-36.021 125.72-63.892 125.72 24.795 0 17.712-10.155 148.79-16.111 170.07-20.703 73.984-96.144 92.854-163.25 81.433 117.3 19.964 147.14 86.092 82.697 152.22-122.39 125.59-175.91-31.511-189.63-71.766-2.514-7.3797-3.6904-10.832-3.7077-7.8964-0.0174-2.9357-1.1937 0.51669-3.7077 7.8964-13.714 40.255-67.233 197.36-189.63 71.766-64.444-66.128-34.605-132.26 82.697-152.22-67.108 11.421-142.55-7.4491-163.25-81.433-5.9562-21.282-16.111-152.36-16.111-170.07 0-88.687 77.742-60.816 125.72-24.795z" fill="currentColor"/></svg>
-        Bluesky
+    <div class="err-actions">
+      <a class="err-btn" href="/">
+        Return later
       </a>
-      <span class="footer-sep">·</span>
-      <a class="footer-link" href="https://github.com/actalithic" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
-</footer>
+
+  <script>
+    (function(){
+      new Image().src = 'https://i.ibb.co/tpSTrg7Z/whitelogo.png';
+      new Image().src = 'https://i.ibb.co/DfYLtMhQ/favicon.png';
+    })();
+  </script>
 </body>
 </html>
