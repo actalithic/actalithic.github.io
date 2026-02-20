@@ -1,68 +1,91 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0c10" media="(prefers-color-scheme: dark)">
+<title>Blog — Actalithic</title>
+<link rel="icon" type="image/png" href="https://i.ibb.co/DfYLtMhQ/favicon.png">
+<link rel="apple-touch-icon" href="https://i.ibb.co/DfYLtMhQ/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script>
+(function(){
+  var s=localStorage.getItem('llm-theme');
+  document.documentElement.setAttribute('data-theme',s||(window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'));
+})();
+</script>
+</head>
+<body>
+
+<!-- ── PRIVACY / COOKIE BANNER ── -->
+<div class="cookie-banner hidden" id="cookieBanner">
+  <div class="cookie-icon"><span class="material-icons-round">privacy_tip</span></div>
+  <div class="cookie-text">
+    <div class="cookie-title">Privacy &amp; Analytics</div>
+    <div class="cookie-body">
+      We collect anonymous visit counts via Firebase Analytics to understand how people use LocalLLM.
+      <strong>We never sell or share your data.</strong>
+      Your conversations run entirely on your device and are never transmitted anywhere.
+      <span class="cookie-local-note" style="display:none">✓ Running locally — no data transmitted.</span>
+    </div>
+  </div>
+  <div class="cookie-actions">
+    <button class="cookie-btn accept" id="cookieAccept">OK</button>
+    <button class="cookie-btn decline" id="cookieDecline">Decline</button>
+  </div>
+</div>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="header-brand">
+    <img class="logo-img logo-light"
+      src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png"
+      alt="LocalLLM by Actalithic">
+    <img class="logo-img logo-dark"
+      src="https://i.ibb.co/tpSTrg7Z/whitelogo.png"
+      alt="LocalLLM by Actalithic">
+  </div>
+  <div class="header-right">
+    <a class="icon-btn" href="index.html" title="Open LocalLLM">
+      <span class="material-icons-round">home</span>
+    </a>
+    <a class="icon-btn bsky" href="https://bsky.app/profile/actalithic.bsky.social" target="_blank" rel="noopener" title="Bluesky">
+      <svg viewBox="0 0 600 530" xmlns="http://www.w3.org/2000/svg"><path d="m135.72 44.03c66.496 49.921 138.02 151.14 164.28 205.46 26.262-54.316 97.782-155.54 164.28-205.46 47.98-36.021 125.72-63.892 125.72 24.795 0 17.712-10.155 148.79-16.111 170.07-20.703 73.984-96.144 92.854-163.25 81.433 117.3 19.964 147.14 86.092 82.697 152.22-122.39 125.59-175.91-31.511-189.63-71.766-2.514-7.3797-3.6904-10.832-3.7077-7.8964-0.0174-2.9357-1.1937 0.51669-3.7077 7.8964-13.714 40.255-67.233 197.36-189.63 71.766-64.444-66.128-34.605-132.26 82.697-152.22-67.108 11.421-142.55-7.4491-163.25-81.433-5.9562-21.282-16.111-152.36-16.111-170.07 0-88.687 77.742-60.816 125.72-24.795z" fill="currentColor"/></svg>
+    </a>
+    <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme">
+      <span class="material-icons-round" id="themeIcon">dark_mode</span>
+    </button>
+  </div>
+</header>
+
+<div class="offline-banner" id="offlineBanner">
+  <span class="material-icons-round">wifi_off</span>
+  You are offline. Blog content loaded from cache.
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+  BLOG CONTENT
+  ────────────────────────────────────────────────────────
+  HOW TO ADD A POST:
+  1. Copy an <article class="post-card"> block
+  2. Paste it ABOVE the existing posts (newest first)
+  3. Fill in: date, tag class, title, body text, image src
+
+  TAG CLASSES: release | update | announcement | guide
+═══════════════════════════════════════════════════════ -->
 <main class="blog-main">
 
   <div class="blog-page-header">
     <div class="blog-page-title">Actalithic <span>Blog</span></div>
-    <div class="blog-page-sub">
-      Updates, releases, and news from the Actalithic team. We build LocalLLM — a completely private, browser-native AI that runs on your own hardware.
-    </div>
+    <div class="blog-page-sub">Updates, releases, and news from the Actalithic team. We build LocalLLM — a completely private, browser-native AI that runs on your own hardware.</div>
   </div>
 
-  <!-- ── POST: VERSION 1.1.0 ── -->
-  <article class="post-card">
+  <!-- ── PASTE NEW POSTS ABOVE THIS LINE ── -->
 
-    <div class="post-meta">
-      <span>Feb 20, 2026</span>
-      <span class="post-tag update">Update</span>
-    </div>
-
-    <div class="post-title">LocalLLM 1.1.0 — Stability, Hybrid Engine & UI Refinements</div>
-
-    <img
-      class="post-image"
-      src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png"
-      alt="LocalLLM 1.1.0"
-      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
-    >
-    <div class="post-image-placeholder" style="display:none">
-      <span class="material-icons-round">image</span> Image unavailable
-    </div>
-
-    <div class="post-body">
-
-      <p>Version <strong>1.1.0</strong> focuses on performance optimization, stability fixes, and architectural improvements to the Actalithic engine.</p>
-
-      <p><strong>ActalithicCore Hybrid Mode</strong> has been refined. The engine intelligently distributes model layers between GPU VRAM and system RAM, allowing larger models to run on mid-range hardware while maintaining acceleration.</p>
-
-      <p><strong>Web Worker execution</strong> now isolates model computation from the UI thread. This prevents freezing during shader compilation and large model initialization.</p>
-
-      <p><strong>Streaming improvements</strong> eliminate previous render flicker. Output now appears smooth and continuous without DOM refresh artifacts.</p>
-
-      <p><strong>Mobile layout corrections</strong> fix padding stacking, picker inconsistencies, and hidden navigation states after model load.</p>
-
-      <p><strong>Stability fixes include:</strong></p>
-      <ul>
-        <li>Resolved CSS parsing failure caused by stray keyframe fragment</li>
-        <li>Fixed render bubble crash blocking initialization</li>
-        <li>Corrected button visibility state after <code>loadModel()</code></li>
-        <li>Improved cache handling reliability</li>
-      </ul>
-
-      <p>LocalLLM 1.1.0 represents the first structural refinement pass after launch — making the system more resilient, responsive, and predictable across devices including Steam Deck, laptops, and hybrid GPU systems.</p>
-
-      <p style="color:var(--muted);font-size:.82em">— The Actalithic Team</p>
-    </div>
-
-    <div class="post-footer">
-      <div class="post-author">
-        <div class="author-dot">AC</div>
-        <span>Actalithic Team</span>
-      </div>
-    </div>
-
-  </article>
-
-
-  <!-- ── POST: VERSION 1.0.0 (ORIGINAL RELEASE) ── -->
+  <!-- ── POST: PUBLIC LAUNCH ── -->
   <article class="post-card">
 
     <div class="post-meta">
@@ -70,12 +93,12 @@
       <span class="post-tag release">Release</span>
     </div>
 
-    <div class="post-title">LocalLLM 1.0.0 — Public Launch</div>
+    <div class="post-title">LocalLLM is live — welcome to actalithic.github.io</div>
 
     <img
       class="post-image"
       src="https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png"
-      alt="LocalLLM 1.0.0 Launch"
+      alt="LocalLLM launch"
       onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
     >
     <div class="post-image-placeholder" style="display:none">
@@ -83,20 +106,15 @@
     </div>
 
     <div class="post-body">
+      <p>After weeks of development, we're officially launching <strong>LocalLLM</strong> at <a href="https://actalithic.github.io" target="_blank" rel="noopener">actalithic.github.io</a> — a fully browser-native AI assistant that runs entirely on your own hardware. No accounts. No API keys. No servers. Zero data ever leaves your device.</p>
 
-      <p>We are officially launching <strong>LocalLLM 1.0.0</strong> — a fully browser-native AI assistant that runs entirely on your own hardware. No accounts. No API keys. No servers. Zero data ever leaves your device.</p>
+      <p>We built LocalLLM because we believe privacy-first AI shouldn't require a PhD to run. You open a webpage, pick a model, and within a few minutes you have a capable AI running completely offline on your GPU — powered by WebGPU and the incredible work of the MLC AI team.</p>
 
-      <p>LocalLLM is built on WebGPU acceleration and modern browser compute capabilities. Users can select from multiple model sizes depending on their hardware capabilities — from lightweight 1B models to large high-performance variants.</p>
+      <p><strong>What we're launching with:</strong> Six carefully curated models spanning a wide range of sizes and capabilities — from the blazing fast <strong>Llama 3.2 1B</strong> that runs on nearly any device, all the way up to <strong>Llama 3.3 70B</strong> for those with high-end hardware. We're starting lean. More models are coming soon.</p>
 
-      <p><strong>Launch Highlights:</strong></p>
-      <ul>
-        <li>Private, fully local AI execution</li>
-        <li>WebGPU-powered inference</li>
-        <li>Multiple curated model options</li>
-        <li>ActalithicCore hybrid execution mode</li>
-      </ul>
+      <p><strong>ActalithicCore</strong> is our custom GPU+CPU hybrid engine mode. It intelligently splits model layers between your GPU VRAM and system RAM, letting you run models far larger than your VRAM would normally allow — without giving up GPU acceleration.</p>
 
-      <p>This release marks the foundation of the Actalithic platform. Further optimizations and engine improvements follow in subsequent updates.</p>
+      <p>This is just the beginning. We have a lot planned — more models, more engine features, and things we're not ready to talk about yet. Follow us on Bluesky and check back here for updates.</p>
 
       <p style="color:var(--muted);font-size:.82em">— The Actalithic Team</p>
     </div>
@@ -106,8 +124,99 @@
         <div class="author-dot">AC</div>
         <span>Actalithic Team</span>
       </div>
+      <div class="post-share">
+        <a class="share-btn" href="https://bsky.app/profile/actalithic.bsky.social" target="_blank" rel="noopener" title="Follow on Bluesky">
+          <svg viewBox="0 0 600 530" xmlns="http://www.w3.org/2000/svg" style="width:11px;height:11px"><path d="m135.72 44.03c66.496 49.921 138.02 151.14 164.28 205.46 26.262-54.316 97.782-155.54 164.28-205.46 47.98-36.021 125.72-63.892 125.72 24.795 0 17.712-10.155 148.79-16.111 170.07-20.703 73.984-96.144 92.854-163.25 81.433 117.3 19.964 147.14 86.092 82.697 152.22-122.39 125.59-175.91-31.511-189.63-71.766-2.514-7.3797-3.6904-10.832-3.7077-7.8964-0.0174-2.9357-1.1937 0.51669-3.7077 7.8964-13.714 40.255-67.233 197.36-189.63 71.766-64.444-66.128-34.605-132.26 82.697-152.22-67.108 11.421-142.55-7.4491-163.25-81.433-5.9562-21.282-16.111-152.36-16.111-170.07 0-88.687 77.742-60.816 125.72-24.795z" fill="currentColor"/></svg>
+        </a>
+      </div>
     </div>
 
   </article>
 
 </main>
+
+<!--
+POST TEMPLATE — copy & paste above "PASTE NEW POSTS" line:
+
+<article class="post-card">
+  <div class="post-meta">
+    <span>Month DD, YYYY</span>
+    <span class="post-tag release">Release</span>
+  </div>
+  <div class="post-title">Your title here</div>
+  <img class="post-image" src="IMAGE_URL" alt="Post image"
+       onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+  <div class="post-image-placeholder" style="display:none">
+    <span class="material-icons-round">image</span> Image unavailable
+  </div>
+  <div class="post-body">
+    <p>Your content. Use <strong>bold</strong>, <a href="#">links</a>, <code>code</code>.</p>
+  </div>
+  <div class="post-footer">
+    <div class="post-author">
+      <div class="author-dot">AC</div>
+      <span>Actalithic Team</span>
+    </div>
+  </div>
+</article>
+-->
+
+<script type="module">
+import { toggleTheme, applyTheme } from './js/theme.js';
+import { initAnalytics, isLocal } from './js/firebase.js';
+
+window.toggleTheme = toggleTheme;
+
+// Apply logos
+function applyLogos() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.querySelectorAll('.logo-light').forEach(el => el.style.display = isDark ? 'none' : 'block');
+  document.querySelectorAll('.logo-dark').forEach(el =>  el.style.display = isDark ? 'block' : 'none');
+  const icon = document.getElementById('themeIcon');
+  if (icon) icon.textContent = isDark ? 'light_mode' : 'dark_mode';
+}
+applyLogos();
+const obs = new MutationObserver(applyLogos);
+obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// Favicon
+let fav = document.querySelector("link[rel='icon']");
+if (!fav) { fav = document.createElement('link'); fav.rel = 'icon'; document.head.appendChild(fav); }
+fav.href = 'https://i.ibb.co/DfYLtMhQ/favicon.png';
+
+// Online/offline
+function updateOnline() {
+  document.getElementById('offlineBanner').classList.toggle('visible', !navigator.onLine);
+}
+window.addEventListener('online',  updateOnline);
+window.addEventListener('offline', updateOnline);
+updateOnline();
+
+// Cookie banner
+const banner = document.getElementById('cookieBanner');
+if (localStorage.getItem('privacy-acknowledged') !== 'true') {
+  banner.classList.remove('hidden');
+  const localNote = banner.querySelector('.cookie-local-note');
+  if (localNote) localNote.style.display = isLocal ? 'inline-block' : 'none';
+}
+document.getElementById('cookieAccept')?.addEventListener('click', () => {
+  localStorage.setItem('privacy-acknowledged', 'true');
+  banner.classList.add('hidden');
+  if (!isLocal) initAnalytics();
+});
+document.getElementById('cookieDecline')?.addEventListener('click', () => {
+  localStorage.setItem('privacy-acknowledged', 'true');
+  localStorage.setItem('analytics-opt-out', 'true');
+  banner.classList.add('hidden');
+});
+if (localStorage.getItem('privacy-acknowledged') === 'true' && localStorage.getItem('analytics-opt-out') !== 'true' && !isLocal) {
+  initAnalytics();
+}
+
+// Preload images
+['https://i.ibb.co/mV4rQV7B/Chat-GPT-Image-18-Feb-2026-08-42-07.png',
+ 'https://i.ibb.co/tpSTrg7Z/whitelogo.png',
+ 'https://i.ibb.co/DfYLtMhQ/favicon.png'].forEach(u => { const i = new Image(); i.src = u; });
+</script>
+</body>
+</html>

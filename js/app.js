@@ -38,26 +38,10 @@ let _stopRequested = false;
 
 // ── Render throttle (perf) ────────────────────────────────
 // Batch DOM writes every RENDER_INTERVAL_MS — keeps GPU thread hot
-const RENDER_INTERVAL_MS = 120; // batch renders → less DOM thrash, GPU stays hot
-let _renderTimer = null;
-let _pendingText = "";
-let _pendingEl   = null;
-
-function scheduleRender(el, text) {
-  _pendingEl   = el;
-  _pendingText = text;
-  if (!_renderTimer) {
-    _renderTimer = setTimeout(() => {
-      if (_pendingEl) renderBubble(_pendingEl, _pendingText);
-      _renderTimer = null;
-    }, RENDER_INTERVAL_MS);
-  }
-}
-
-function flushRender() {
-  if (_renderTimer) { clearTimeout(_renderTimer); _renderTimer = null; }
-  if (_pendingEl)   { renderBubble(_pendingEl, _pendingText); }
-}
+// ── Render pipeline: buffer silently, then burst word-by-word ──
+// scheduleRender / flushRender kept as no-ops for compatibility
+function scheduleRender() {}
+function flushRender()    {}
 
 // ── Wake Lock: prevent browser throttling in background tabs ──
 let _wakeLock = null;
@@ -630,7 +614,7 @@ function renderBubble(el, rawText) {
     tb.innerHTML = `<div class="think-header" onclick="this.parentElement.classList.toggle('collapsed')">
       <span class="material-icons-round think-icon">psychology</span>
       <span class="think-label">Thinking</span>
-      <span class="think-label-sub">\${wordCount} words</span>
+      <span class="think-label-sub">${wordCount} words</span>
       <span class="material-icons-round think-chevron">expand_more</span>
     </div><div class="think-content"></div>`;
     tb.querySelector(".think-content").textContent = thinkText;
@@ -640,34 +624,50 @@ function renderBubble(el, rawText) {
 
   // ── Main reply text (after think block if any) ──
   const mainText = hasCompleteThink ? afterThink : text;
-  const prevMain = state.mainSpan ? state.mainSpan.textContent : "";
+  const prevMain = state.mainSpan ? state.mainSpan.dataset.fullText || "" : "";
   const delta = mainText.slice(prevMain.length);
 
   if (delta.length === 0) { state.lastText = text; return; }
 
   if (!state.mainSpan) {
-    // Create the main text span once
     const s = document.createElement("span");
     s.style.whiteSpace = "pre-wrap";
+    s.style.display = "inline";
+    s.dataset.fullText = "";
     el.appendChild(s);
     state.mainSpan = s;
   }
 
   if (isStreaming && isGrowing && delta.length > 0) {
-    // Append new text as a fading chunk — no wipe, no blink
-    const chunk = document.createElement("span");
-    chunk.className = "text-chunk";
-    chunk.style.whiteSpace = "pre-wrap";
-    chunk.textContent = delta;
-    // Small cascade stagger so rapid batches flow in smoothly
-    const chunkCount = state.mainSpan.children.length;
-    chunk.style.animationDelay = Math.min(chunkCount * 8, 40) + "ms";
-    state.mainSpan.appendChild(chunk);
+    // ── Word-burst animation ──
+    // Split delta into tokens: words + their trailing whitespace/newlines
+    // Each token gets its own span with a staggered animation delay
+    const WORD_STAGGER_MS = 38;   // gap between each word appearing
+    const WORD_FADE_MS    = 160;  // how long each word's fade lasts
 
+    // Tokenize: split on whitespace boundaries but keep the whitespace attached
+    const tokens = delta.match(/\S+\s*/g) || [delta];
 
+    // Count existing word-spans to continue stagger sequence
+    const existingWords = state.mainSpan.querySelectorAll(".word-token").length;
+
+    tokens.forEach((token, i) => {
+      const w = document.createElement("span");
+      w.className = "word-token";
+      w.textContent = token;
+      w.style.cssText = `display:inline;white-space:pre-wrap;opacity:0;animation:wordIn ${WORD_FADE_MS}ms cubic-bezier(.16,.84,.44,1) ${(existingWords + i) * WORD_STAGGER_MS}ms forwards`;
+      state.mainSpan.appendChild(w);
+    });
+
+    state.mainSpan.dataset.fullText = mainText;
   } else {
-    // Static render (history, final clean-up)
-    state.mainSpan.textContent = mainText;
+    // Static render (history load) — no animation, just set text
+    state.mainSpan.innerHTML = "";
+    state.mainSpan.dataset.fullText = mainText;
+    const s = document.createElement("span");
+    s.style.whiteSpace = "pre-wrap";
+    s.textContent = mainText;
+    state.mainSpan.appendChild(s);
   }
 
   state.lastText = text;
@@ -765,9 +765,15 @@ export async function sendMessage() {
     }
 
     await acquireWakeLock();
-    let tokenBatch = 0;
-    const BUFFER_DELAY_MS = 220; // collect tokens silently before first paint
-    let streamStartTime = null;
+
+    // ── Phase 1: silent buffer — let GPU run at full speed for 1 second ──
+    // No DOM writes at all. Engine generates tokens as fast as possible.
+    const BURST_BUFFER_MS = 950;       // how long to collect before first render
+    const INTER_BURST_MS  = 700;       // subsequent bursts while still streaming
+    let bufferStart   = null;
+    let lastBurstAt   = null;
+    let renderedUpTo  = 0;             // char index of last rendered text
+
     for await (const chunk of stream) {
       if (_stopRequested) break;
       const delta = chunk.choices[0]?.delta?.content || "";
@@ -775,32 +781,32 @@ export async function sendMessage() {
         if (!first) {
           const tdots = tb.querySelector('.typing-dots');
           if (tdots) tdots.remove();
-          first = true; t0 = Date.now(); streamStartTime = Date.now();
+          first = true; t0 = Date.now(); bufferStart = Date.now(); lastBurstAt = Date.now();
         }
         fullReply += delta;
-        tokenBatch++;
         tok += delta.length;
-        // Hold off rendering until buffer fills, then render every 8 tokens
-        const elapsed = streamStartTime ? Date.now() - streamStartTime : 0;
-        if (elapsed >= BUFFER_DELAY_MS && tokenBatch % 8 === 0) {
-          scheduleRender(tb, stripMemoryCommands(fullReply));
-          smartScroll();
+
+        // Fire a word-burst render once buffer window passes
+        const now = Date.now();
+        const sinceBuffer = bufferStart ? now - bufferStart : 0;
+        const sinceBurst  = lastBurstAt ? now - lastBurstAt  : 0;
+
+        if (sinceBuffer >= BURST_BUFFER_MS && sinceBurst >= INTER_BURST_MS) {
+          const cleanedSoFar = stripMemoryCommands(fullReply);
+          // Only render the new slice since last render
+          if (cleanedSoFar.length > renderedUpTo) {
+            renderBubble(tb, cleanedSoFar);
+            renderedUpTo = cleanedSoFar.length;
+            lastBurstAt  = now;
+            smartScroll();
+          }
         }
       }
     }
-    // Final flush — one authoritative render, no double-call
-    flushRender();
-    // Only re-render if we haven't already (flushRender handles it)
-    // Ensure final clean strip without triggering a second full rebuild:
-    const finalClean = stripMemoryCommands(fullReply);
-    if (first) {
-      const st = _bubbleState.get(tb);
-      if (st && st.mainSpan) {
-        // Quietly update textContent of mainSpan without wipe/rebuild
-        const expected = finalClean.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-        if (st.mainSpan.textContent !== expected) st.mainSpan.textContent = expected;
-      }
-    }
+    // ── Phase 2: final burst — render everything that's left ──
+    const finalCleanFull = stripMemoryCommands(fullReply);
+    renderBubble(tb, finalCleanFull);
+    renderedUpTo = finalCleanFull.length;
     smartScroll();
     releaseWakeLock();
 

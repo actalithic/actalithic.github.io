@@ -1089,9 +1089,12 @@ header .logo-img { /* sizes set by responsive rules above */ }
 }
 
 /* ── Streaming text fade-in (no blink, incremental) ── */
-.text-chunk{opacity:0;animation:chunkFade 1.1s cubic-bezier(.16,.84,.44,1) forwards}
-@keyframes chunkFade{
-  0%   {opacity:0;transform:translateY(2px)}
+/* ── Word-by-word burst animation ── */
+.word-token{display:inline;white-space:pre-wrap}
+@keyframes wordIn{
+  0%  {opacity:0;transform:translateY(3px)}
+  100%{opacity:1;transform:translateY(0)}
+}
   20%  {opacity:.15}
   60%  {opacity:.7;transform:translateY(.5px)}
   100% {opacity:1;transform:translateY(0)}
