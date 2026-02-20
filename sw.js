@@ -1,10 +1,12 @@
 // sw.js — Service Worker for LocalLLM by Actalithic
-const CACHE = 'localllm-v4';
+const CACHE = 'localllm-v5';
 const STATIC = [
   '/',
   '/index.html',
   '/blog.html',
   '/404.html',
+  '/acc-converter.html',
+  '/modelurls.json',
   '/css/style.css',
   '/js/app.js',
   '/js/models.js',
@@ -38,7 +40,7 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
-  // Skip MLC model downloads, HF downloads, and external CDNs
+  // Skip model downloads and external CDNs — let them go direct
   if (url.includes('huggingface.co') || url.includes('mlc-ai') ||
       url.includes('esm.run') || url.includes('gstatic.com/firebasejs')) {
     return;
@@ -48,15 +50,11 @@ self.addEventListener('fetch', e => {
       if (cached) return cached;
       return fetch(e.request).then(res => {
         if (res && res.status === 200 && res.type !== 'opaque') {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
+          caches.open(CACHE).then(c => c.put(e.request, res.clone()));
         }
         return res;
       }).catch(() => {
-        // Fallback to 404 page for navigation requests
-        if (e.request.mode === 'navigate') {
-          return caches.match('/404.html');
-        }
+        if (e.request.mode === 'navigate') return caches.match('/404.html');
       });
     })
   );

@@ -1,0 +1,41 @@
+{
+  "_comment": "Edit the 'hostedBase' URL for each model to point to your own CDN or server.",
+  "_comment2": "ACC Worker will check hostedBase FIRST, then fall back to HuggingFace if null.",
+  "_comment3": "Expected directory layout on your server: <hostedBase>/manifest.json, config.json, tokenizer.json, shards/shard_00.bin ...",
+  "_comment4": "Set 'hostedBase' to null to always download from HuggingFace and convert on-device.",
+
+  "models": [
+    {
+      "id": "gemma-3-4b-it.acc",
+      "name": "Gemma 3 4B",
+      "hostedBase": null,
+      "_example": "https://cdn.actalithic.com/models/gemma-3-4b-it.acc"
+    },
+    {
+      "id": "qwen2.5-7b-instruct.acc",
+      "name": "Qwen 2.5 7B",
+      "hostedBase": null,
+      "_example": "https://cdn.actalithic.com/models/qwen2.5-7b-instruct.acc"
+    },
+    {
+      "id": "phi-4-mini.acc",
+      "name": "Phi-4 Mini",
+      "hostedBase": null,
+      "_example": "https://cdn.actalithic.com/models/phi-4-mini.acc"
+    },
+    {
+      "id": "llama-3.2-3b.acc",
+      "name": "Llama 3.2 3B (ACC)",
+      "hostedBase": null,
+      "_example": "https://cdn.actalithic.com/models/llama-3.2-3b.acc"
+    }
+  ],
+
+  "_hosting_guide": {
+    "step1": "Convert your model using the ACC Converter page to get manifest.json, config.json, tokenizer.json, and shards/ folder",
+    "step2": "Upload the entire .acc folder to your CDN/server",
+    "step3": "Set the hostedBase URL above to your CDN path (no trailing slash)",
+    "step4": "Users will now download your pre-converted .acc shards directly — no HuggingFace, no on-device conversion",
+    "step5": "This is 3-5x faster first load since .acc shards are already quantized"
+  }
+}

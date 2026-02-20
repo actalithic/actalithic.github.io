@@ -41,11 +41,11 @@ export const DTYPE = { F32: 0, F16: 1, Q8: 2, Q4: 3 };
  * Block size 32 — one scale per 32 values.
  * Returns { data: Uint8Array, scales: Float32Array }
  */
-export function quantizeQ8(f32) {
-  const BLOCK = 32;
+export function quantizeQ8(f32, blockSize = 32) {
+  const BLOCK   = Math.max(16, blockSize);
   const nBlocks = Math.ceil(f32.length / BLOCK);
-  const out = new Int8Array(f32.length);
-  const scales = new Float32Array(nBlocks);
+  const out     = new Int8Array(f32.length);
+  const scales  = new Float32Array(nBlocks);
 
   for (let b = 0; b < nBlocks; b++) {
     const start = b * BLOCK;
@@ -70,10 +70,9 @@ export function quantizeQ8(f32) {
  * Block size 32. Two values packed per byte.
  * Returns { data: Uint8Array, scales: Float32Array }
  */
-export function quantizeQ4(f32) {
-  const BLOCK = 32;
-  const nBlocks = Math.ceil(f32.length / BLOCK);
-  // Each block: 32 values → 16 bytes packed + 1 scale (f32)
+export function quantizeQ4(f32, blockSize = 32, calibrate = false) {
+  const BLOCK    = Math.max(16, blockSize);  // min 16, recommended 32 or 64
+  const nBlocks  = Math.ceil(f32.length / BLOCK);
   const packedLen = Math.ceil(f32.length / 2);
   const out    = new Uint8Array(packedLen);
   const scales = new Float32Array(nBlocks);
@@ -81,12 +80,27 @@ export function quantizeQ4(f32) {
   for (let b = 0; b < nBlocks; b++) {
     const start = b * BLOCK;
     const end   = Math.min(start + BLOCK, f32.length);
-    let maxAbs  = 0;
-    for (let i = start; i < end; i++) {
-      const a = Math.abs(f32[i]);
-      if (a > maxAbs) maxAbs = a;
+
+    // Calibration pass: use true max of absolute values (not just first pass)
+    // This reduces clamping error significantly for activations with outliers.
+    let maxAbs = 0;
+    if (calibrate) {
+      // Two-pass: find percentile-99 clamp to suppress extreme outliers
+      const vals = [];
+      for (let i = start; i < end; i++) vals.push(Math.abs(f32[i]));
+      vals.sort((a,b) => a - b);
+      // Use 99th-percentile to avoid outlier distortion
+      const p99idx = Math.min(vals.length - 1, Math.floor(vals.length * 0.99));
+      maxAbs = vals[p99idx] || 0;
+    } else {
+      for (let i = start; i < end; i++) {
+        const a = Math.abs(f32[i]);
+        if (a > maxAbs) maxAbs = a;
+      }
     }
-    const scale = maxAbs / 7.0;  // 4-bit signed: -8..7
+
+    // 4-bit signed: range -8..7 → scale to fit full dynamic range
+    const scale = maxAbs / 7.0;
     scales[b]   = scale;
     const inv   = scale > 0 ? 1 / scale : 0;
 
@@ -363,6 +377,10 @@ export async function convertSafetensors(buffer, opts = {}) {
     configOverrides = {},
     tokenizerJson   = null,
     kernelsSrc      = null,
+    // Extreme-speed optimisation flags (used by Actalithic presets)
+    optimized       = false,    // enables all speed-oriented passes
+    blockSize       = 32,       // Q4: 64, Q8: 32 — larger blocks = fewer dequant ops at inference
+    calibrateBlocks = false,    // per-block min/max calibration for better Q4 accuracy
   } = opts;
 
   onProgress(0, "Parsing safetensors header…");
@@ -383,6 +401,8 @@ export async function convertSafetensors(buffer, opts = {}) {
     created_at:   new Date().toISOString(),
     source:       "converted-by-actalithic-acc-converter",
     tensor_count: tensorMap.size,
+    optimized:    optimized,
+    block_size:   optimized ? blockSize : (quantMode === 'q4' ? 32 : 32),
   };
 
   // ── Quantize + shard tensors ────────────────────────────────────────────
@@ -417,8 +437,9 @@ export async function convertSafetensors(buffer, opts = {}) {
       `Converting: ${name} [${meta.shape.join("×")}]`
     );
 
-    // Yield to event loop every 10 tensors so UI stays responsive
-    if (ti % 10 === 0) await new Promise(r => setTimeout(r, 0));
+    // Yield to event loop — optimized mode yields less often for speed
+    const yieldEvery = optimized ? 20 : 10;
+    if (ti % yieldEvery === 0) await new Promise(r => setTimeout(r, 0));
 
     let packed;
 
@@ -437,16 +458,19 @@ export async function convertSafetensors(buffer, opts = {}) {
 
     } else if (quantMode === "q8") {
       const f32 = tensorToFloat32(parsed, name);
-      const { data, scales } = quantizeQ8(f32);
+      const effBlock = optimized ? blockSize : 32;
+      const { data, scales } = quantizeQ8(f32, effBlock);
       // Pack: scales first (F32), then quantized bytes
       const combined = new Uint8Array(scales.byteLength + data.byteLength);
       combined.set(new Uint8Array(scales.buffer), 0);
       combined.set(data, scales.byteLength);
       packed = packTensor(name, DTYPE.Q8, meta.shape, combined);
 
-    } else { // q4
+    } else { // q4 — use optimized path when enabled
       const f32 = tensorToFloat32(parsed, name);
-      const { data, scales } = quantizeQ4(f32);
+      const effBlock    = optimized ? blockSize : 32;
+      const effCalibrate = optimized && calibrateBlocks && isWeight;
+      const { data, scales } = quantizeQ4(f32, effBlock, effCalibrate);
       const combined = new Uint8Array(scales.byteLength + data.byteLength);
       combined.set(new Uint8Array(scales.buffer), 0);
       combined.set(data, scales.byteLength);

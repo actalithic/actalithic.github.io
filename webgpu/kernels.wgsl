@@ -562,3 +562,22 @@ fn elem_mul(@builtin(global_invocation_id) gid: vec3u) {
   if (idx >= u32(u_ew.size)) { return; }
   ew_a[idx] = ew_a[idx] * ew_b[idx];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KV CACHE COPY
+// Copies current K or V slice into persistent KV cache buffer at given position.
+// Enables incremental decode without recomputing entire context each step.
+// ─────────────────────────────────────────────────────────────────────────────
+
+@group(0) @binding(0) var<storage, read>       kvc_src:  array<f32>;
+@group(0) @binding(1) var<storage, read_write> kvc_dst:  array<f32>;
+@group(0) @binding(2) var<uniform>             u_kvc:    Uniforms;
+
+@compute @workgroup_size(64)
+fn kv_cache_copy(@builtin(global_invocation_id) gid: vec3u) {
+  let idx        = gid.x;
+  let slice_size = u32(u_kvc.n_kv) * u32(u_kvc.head_dim) * u32(u_kvc.seq_len);
+  if (idx >= slice_size) { return; }
+  let dst_offset = u32(u_kvc.offset) * u32(u_kvc.n_kv) * u32(u_kvc.head_dim);
+  kvc_dst[dst_offset + idx] = kvc_src[idx];
+}

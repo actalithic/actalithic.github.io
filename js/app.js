@@ -1,6 +1,6 @@
 // app.js — LocalLLM by Actalithic
 import * as webllm from "https://esm.run/@mlc-ai/web-llm";
-import { MODELS, ACC_MODELS, RUN_LABELS, getAllModels, getModelById, isACCModel } from "./models.js";
+import { MODELS, ACC_MODELS, RUN_LABELS, getAllModels, getModelById, isACCModel, registerACCModel } from "./models.js";
 
 // ── ACC-Worker bridge ─────────────────────────────────────────────────────────
 // Wraps ACC-Worker so the rest of app.js works identically for both MLC and ACC.
@@ -175,9 +175,9 @@ function showMobileBanner() {
 
 // ── Custom Model Picker ──────────────────────────────────
 const GROUPS = [
-  { label: "Light",    ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC", "gemma-3-4b-it.acc"] },
-  { label: "Middle",   ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC"] },
-  { label: "Advanced", ids: ["qwen2.5-7b-instruct.acc", "DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
+  { label: "Light",    ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC", "gemma-3-4b-it.acc", "phi-4-mini.acc"] },
+  { label: "Middle",   ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC", "qwen2.5-7b-instruct.acc"] },
+  { label: "Advanced", ids: ["DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
 ];
 
 function runPill(m) {
@@ -303,7 +303,6 @@ function buildPicker(cached) {
     buildPicker(cached);
   });
 }
-
 
 export function updateModelInfo() {
   const id = _selectedModelId || document.getElementById("modelSelect")?.value;
@@ -1002,9 +1001,9 @@ async function buildModalBody() {
   body.appendChild(note);
 
   const MODAL_GROUPS = [
-    { label: "Light",    ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC", "gemma-3-4b-it.acc"] },
-    { label: "Middle",   ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC"] },
-    { label: "Advanced", ids: ["qwen2.5-7b-instruct.acc", "DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
+    { label: "Light",    ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC", "gemma-3-4b-it.acc", "phi-4-mini.acc"] },
+    { label: "Middle",   ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC", "qwen2.5-7b-instruct.acc"] },
+    { label: "Advanced", ids: ["DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
   ];
 
   MODAL_GROUPS.forEach(g => {

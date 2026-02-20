@@ -411,7 +411,7 @@ header{
 /* toggle rows */
 .toggle-section{width:100%;max-width:440px;display:flex;flex-direction:column;gap:.55rem}
 .toggle-section-label{font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:.2rem}
-.exp-row{display:flex;align-items:center;gap:1rem;padding:1.2rem 1.3rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);transition:background .15s}
+.exp-row{display:flex;align-items:center;gap:1rem;padding:1.4rem 1.5rem;border:1px solid var(--border);border-radius:8px;background:var(--bg);transition:background .15s}
 .exp-label{flex:1;min-width:0}
 .exp-label-title{font-size:1rem;color:var(--ink);display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;line-height:1.4;font-weight:600}
 .exp-label-sub{font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.7}
@@ -1195,8 +1195,8 @@ header .logo-img { /* sizes set by responsive rules above */ }
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    padding: 2.5rem 3rem;
-    gap: 1.2rem;
+    padding: 3rem 3.5rem;
+    gap: 1.8rem;
     overflow-y: visible;
     overflow-x: visible;
     order: 2;
@@ -1210,8 +1210,8 @@ header .logo-img { /* sizes set by responsive rules above */ }
     max-width: none;
     display: flex;
     flex-direction: column;
-    padding: 2.5rem 3rem;
-    gap: 1.2rem;
+    padding: 3rem 3.5rem;
+    gap: 1.8rem;
     overflow-y: auto;
     overflow-x: visible;
     order: 1;
@@ -1331,10 +1331,6 @@ header .logo-img { /* sizes set by responsive rules above */ }
   0%  {opacity:0;transform:translateY(4px)}
   40% {opacity:.4;transform:translateY(2px)}
   100%{opacity:1;transform:translateY(0)}
-}
-  20%  {opacity:.15}
-  60%  {opacity:.7;transform:translateY(.5px)}
-  100% {opacity:1;transform:translateY(0)}
 }
 
 
@@ -1474,3 +1470,75 @@ header .logo-img { /* sizes set by responsive rules above */ }
   font-size:.55rem;color:var(--purple);
   display:flex;align-items:center;gap:.2rem;margin-top:.2rem;
 }
+
+
+/* ════════════════════════════════════════════════════════
+   FOOTER
+════════════════════════════════════════════════════════ */
+.site-footer{
+  width:100%;border-top:1px solid var(--border);
+  background:var(--bg);flex-shrink:0;
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  transition:background .2s,border-color .2s;
+}
+.footer-inner{
+  width:100%;max-width:840px;margin:0 auto;
+  padding:1rem 1.5rem;
+  display:flex;align-items:center;gap:1rem;
+  font-size:.6rem;color:var(--muted);letter-spacing:.04em;
+  flex-wrap:wrap;
+}
+.footer-logo{
+  height:18px;width:auto;opacity:.45;transition:opacity .15s;
+  display:block;object-fit:contain;flex-shrink:0;
+}
+.footer-logo-light{display:block}
+.footer-logo-dark{display:none}
+[data-theme="dark"] .footer-logo-light{display:none}
+[data-theme="dark"] .footer-logo-dark{display:block}
+.footer-logo:hover{opacity:.9}
+.footer-copy{white-space:nowrap}
+.footer-links{
+  display:flex;align-items:center;gap:.75rem;margin-left:auto;flex-wrap:wrap;
+}
+.footer-link{
+  color:var(--muted);text-decoration:none;transition:color .15s;white-space:nowrap;
+  display:flex;align-items:center;gap:.3rem;
+}
+.footer-link:hover{color:var(--ink)}
+.footer-link svg{width:10px;height:10px;flex-shrink:0}
+.footer-sep{color:var(--border2)}
+@media(max-width:480px){
+  .footer-inner{padding:.75rem 1rem;gap:.55rem;font-size:.58rem}
+  .footer-logo{height:14px}
+  .footer-links{gap:.55rem}
+}
+@media(min-width:900px){
+  .footer-inner{max-width:none;padding:1rem 2.5rem}
+}
+
+/* ════════════════════════════════════════════════════════
+   SPACING IMPROVEMENTS — more breathing room everywhere
+════════════════════════════════════════════════════════ */
+/* Desktop: chat messages more padding */
+@media(min-width:900px){
+  .messages{padding:2.5rem 3.5rem;gap:1.75rem}
+  .input-bar{padding:1rem 3.5rem 1.2rem}
+  .info-bar{padding:0 3.5rem .75rem}
+  .core-stats-bar{padding:.7rem 3.5rem .6rem}
+  .msg-col{max-width:62%}
+}
+@media(min-width:1300px){
+  .messages{padding:2.5rem 6rem;gap:1.75rem}
+  .input-bar{padding:1rem 6rem 1.2rem}
+  .info-bar{padding:0 6rem .75rem}
+  .core-stats-bar{padding:.7rem 6rem .6rem}
+}
+
+/* Converter page footer matches main site */
+.converter-wrap{padding-bottom:2rem}
+
+/* ACC converter card spacing */
+.conv-card{padding:1.5rem 1.75rem;margin-bottom:0}
+@media(min-width:600px){.converter-wrap{padding:2rem 1.5rem 3rem}}
+@media(min-width:840px){.converter-wrap{padding:2.5rem 2rem 3.5rem;max-width:760px}}
