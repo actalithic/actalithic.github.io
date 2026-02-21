@@ -505,18 +505,18 @@ fetch('./webgpu/kernels.wgsl').then(r => r.text()).then(t => { _kernelsSrc = t; 
 // ── Model catalogue — these are the exact models LocalLLM ships ──────────────
 const MODELS = [
   {
-    id:          'llama-3.2-3b.acc',
-    name:        'Llama 3.2 3B',
+    id:          'llama-3.2-1b.acc',
+    name:        'Llama 3.2 1B',
     creator:     'Meta',
     tier:        'Light',
-    size:        '~2 GB',
+    size:        '~0.5 GB',
     arch:        'llama',
-    outputName:  'llama-3.2-3b',
+    outputName:  'llama-3.2-1b',
     desc:        'Fastest model — great for all devices including mobile.',
     tags:        [['Light', 'green'], ['LLaMA 3', 'purple'], ['2 GB', 'blue']],
-    // bnb-4bit repo: single model.safetensors ~2 GB, public, no login needed.
-    // (BF16 original is 6.4 GB across 2 shards — too large to buffer in browser.)
-    hfBase:      'https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-unsloth-bnb-4bit/resolve/main',
+    // 1B bnb-4bit: single model.safetensors ~0.5 GB — fits in any browser's ArrayBuffer.
+    // (3B bnb-4bit is still ~2 GB which OOMs on low-RAM devices; 1B is safe everywhere.)
+    hfBase:      'https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-bnb-4bit/resolve/main',
     hfWeights:   'model.safetensors',
     hfTokenizer: 'tokenizer.json',
   },
@@ -708,7 +708,9 @@ async function streamShardCompact(url, header, dataStart, si, shardTotal, onStat
 
   // Pre-allocate compact output (tensor bytes only, no padding)
   const compactSize = regions.reduce((s, r) => s + r.byteLen, 0);
-  const compactData = new Uint8Array(compactSize);
+  let compactData;
+  try { compactData = new Uint8Array(compactSize); }
+  catch(e) { throw new Error(`Shard too large for browser memory (needs ${fmtBytes(compactSize)}). Try a desktop browser with more RAM.`); }
 
   // Assign compact write offsets
   let compactOff = 0;
@@ -808,7 +810,9 @@ async function loadModelWeights(m, onStatus) {
       buildSafetensorsHeader(sh);
     const shTotalBytes = 8 + shPadLen + compactSize;
     onStatus(`Allocating ${fmtBytes(shTotalBytes)} buffer…`);
-    const shOut = new Uint8Array(shTotalBytes);
+    let shOut;
+    try { shOut = new Uint8Array(shTotalBytes); }
+    catch(e) { throw new Error(`Model too large for browser memory (needs ${fmtBytes(shTotalBytes)}). Try a smaller model or use a desktop browser with more RAM.`); }
     const shDv  = new DataView(shOut.buffer);
     shDv.setUint32(0, shPadLen, true);
     shDv.setUint32(4, 0,        true);
@@ -869,7 +873,9 @@ async function loadModelWeights(m, onStatus) {
 
   // 6. Allocate ONE output buffer, copy compact shard data in, free each slice immediately
   onStatus(`Allocating ${fmtBytes(totalBytes)} output buffer…`);
-  const out = new Uint8Array(totalBytes);
+  let out;
+  try { out = new Uint8Array(totalBytes); }
+  catch(e) { throw new Error(`Model too large for browser memory (needs ${fmtBytes(totalBytes)}). Try a smaller model or use a desktop browser with more RAM.`); }
   const dv  = new DataView(out.buffer);
   dv.setUint32(0, mPadLen, true);
   dv.setUint32(4, 0,       true);
