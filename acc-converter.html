@@ -790,16 +790,35 @@ async function loadModelWeights(m, onStatus) {
     } catch {}
   }
 
-  // 2. Single-file fast path — no merge needed
+  // 2. Single-file fast path — pre-alloc final buffer, stream directly into it
   if (!shardFiles || shardFiles.length <= 1) {
     const fname = shardFiles?.[0] || m.hfWeights || 'model.safetensors';
+    onStatus(`Reading ${fname} header…`);
+    const singleUrl = hfUrl(base, fname);
+    const { header: sh, dataStart: sd } = await fetchSafetensorsHeader(singleUrl);
+
+    // Build header JSON now so we know its size, then allocate ONE buffer for everything
+    const compactSize = Object.entries(sh)
+      .filter(([n]) => n !== '__metadata__')
+      .reduce((s, [, m]) => s + (m.data_offsets[1] - m.data_offsets[0]), 0);
+    const { hdrBytes: shHdrBytes, padLen: shPadLen, hdrObj: shHdrObj } =
+      buildSafetensorsHeader(sh);
+    const shTotalBytes = 8 + shPadLen + compactSize;
+    onStatus(`Allocating ${fmtBytes(shTotalBytes)} buffer…`);
+    const shOut = new Uint8Array(shTotalBytes);
+    const shDv  = new DataView(shOut.buffer);
+    shDv.setUint32(0, shPadLen, true);
+    shDv.setUint32(4, 0,        true);
+    shOut.set(shHdrBytes, 8);
+    for (let i = 0; i < shPadLen - shHdrBytes.length; i++)
+      shOut[8 + shHdrBytes.length + i] = 0x20;
+
+    // Stream tensor data directly into shOut past the header — zero extra allocation
+    const shDataView = new Uint8Array(shOut.buffer, 8 + shPadLen, compactSize);
     onStatus(`Downloading ${fname}…`);
-    return fetchSingleWithProgress(hfUrl(base, fname), (loaded, total) => {
-      const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
-      setDlStatus('loading',
-        `Downloading ${fname} — ${fmtBytes(loaded)}${total ? ' / ' + fmtBytes(total) + ' (' + pct + '%)' : ''}`,
-        true, pct);
-    });
+    await streamShardIntoView(singleUrl, sh, sd, shDataView, 0, 1, onStatus);
+    setDlStatus('ok', `${fname} downloaded (${fmtBytes(shTotalBytes)})`, false, 100);
+    return shOut.buffer;
   }
 
   // 3. Multi-shard: read headers first (one 64 KB range request each)
@@ -826,77 +845,119 @@ async function loadModelWeights(m, onStatus) {
     // result.data is compact (tensor bytes only). The raw download stream is gone.
   }
 
-  // 5. Build merged header (offsets into the final concatenated data block)
-  onStatus('Building merged safetensors header…');
+  // 5. Compute total compact data size from shard compact slices
+  onStatus('Building merged safetensors buffer…');
   let dataOffset = 0;
-  const mergedHeader = {};
+  const mergedHdrObj = {};
   for (const { tensors } of shardResults) {
     for (const t of tensors) {
       const len = t.end - t.start;
-      mergedHeader[t.name] = { dtype: t.dtype, shape: t.shape,
+      mergedHdrObj[t.name] = { dtype: t.dtype, shape: t.shape,
         data_offsets: [dataOffset, dataOffset + len] };
       dataOffset += len;
     }
   }
 
-  const headerJson  = JSON.stringify(mergedHeader);
-  const headerBytes = new TextEncoder().encode(headerJson);
-  const pad         = (8 - (headerBytes.length % 8)) % 8;
-  const paddedLen   = headerBytes.length + pad;
-  const totalBytes  = 8 + paddedLen + dataOffset;
+  const mHdrJson  = JSON.stringify(mergedHdrObj);
+  const mHdrBytes = new TextEncoder().encode(mHdrJson);
+  const mPad      = (8 - (mHdrBytes.length % 8)) % 8;
+  const mPadLen   = mHdrBytes.length + mPad;
+  const totalBytes = 8 + mPadLen + dataOffset;
 
-  // 6. Allocate output and copy compact shard data in, freeing each slice immediately
+  // 6. Allocate ONE output buffer, copy compact shard data in, free each slice immediately
   onStatus(`Allocating ${fmtBytes(totalBytes)} output buffer…`);
   const out = new Uint8Array(totalBytes);
   const dv  = new DataView(out.buffer);
-  dv.setUint32(0, paddedLen, true);
-  dv.setUint32(4, 0,         true);
-  out.set(headerBytes, 8);
-  for (let i = 0; i < pad; i++) out[8 + headerBytes.length + i] = 0x20;
+  dv.setUint32(0, mPadLen, true);
+  dv.setUint32(4, 0,       true);
+  out.set(mHdrBytes, 8);
+  for (let i = 0; i < mPad; i++) out[8 + mHdrBytes.length + i] = 0x20;
 
-  let writeOff = 8 + paddedLen;
+  let writeOff = 8 + mPadLen;
   for (let si = 0; si < shardResults.length; si++) {
     out.set(shardResults[si].data, writeOff);
     writeOff += shardResults[si].data.byteLength;
-    shardResults[si].data = null;  // free compact slice as we go
+    shardResults[si].data = null;  // ← free compact slice immediately after copy
   }
 
   setDlStatus('ok', `${shardHeaders.length} shards merged — ${fmtBytes(totalBytes)}`, false, 100);
   return out.buffer;
 }
 
-// ── Single-file streaming download ───────────────────────────────────────────
-async function fetchSingleWithProgress(url, onProgress) {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${url}`);
-  const total  = parseInt(resp.headers.get('content-length') || '0');
-  let loaded   = 0;
-  const reader = resp.body.getReader();
-  if (total > 0) {
-    // Pre-allocate exact size — one allocation, no chunk array
-    const out = new Uint8Array(total);
-    let off = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      out.set(value, off); off += value.length;
-      loaded += value.length;
-      onProgress(loaded, total);
-    }
-    return out.buffer;
+// ── Build safetensors header bytes from a raw shard header ───────────────────
+// Recomputes contiguous data_offsets (stripping gaps) and returns encoded bytes.
+function buildSafetensorsHeader(srcHeader) {
+  let off = 0;
+  const hdrObj = {};
+  const regions = Object.entries(srcHeader)
+    .filter(([n]) => n !== '__metadata__')
+    .map(([name, meta]) => ({ name, dtype: meta.dtype, shape: meta.shape,
+      byteLen: meta.data_offsets[1] - meta.data_offsets[0] }))
+    .sort((a, b) => 0); // stable — order preserved from header
+  for (const r of regions) {
+    hdrObj[r.name] = { dtype: r.dtype, shape: r.shape,
+      data_offsets: [off, off + r.byteLen] };
+    off += r.byteLen;
   }
-  // Unknown size fallback
-  const chunks = [];
+  const hdrJson  = JSON.stringify(hdrObj);
+  const hdrBytes = new TextEncoder().encode(hdrJson);
+  const pad      = (8 - (hdrBytes.length % 8)) % 8;
+  const padLen   = hdrBytes.length + pad;
+  return { hdrBytes, padLen, hdrObj };
+}
+
+// ── Stream tensor data from one shard directly into a pre-allocated Uint8Array ─
+// `view` must be exactly compactSize bytes (no header, just tensor data).
+// Chunks land directly in `view` — no intermediate buffer.
+async function streamShardIntoView(url, header, dataStart, view, si, shardTotal, onStatus) {
+  const regions = Object.entries(header)
+    .filter(([n]) => n !== '__metadata__')
+    .map(([name, meta]) => ({
+      name,
+      fileStart: meta.data_offsets[0],
+      byteLen:   meta.data_offsets[1] - meta.data_offsets[0],
+    }))
+    .sort((a, b) => a.fileStart - b.fileStart);
+
+  // Map each tensor name → its compact write offset in view
+  const writeOffset = {};
+  let compactOff = 0;
+  for (const r of regions) {
+    writeOffset[r.name] = compactOff;
+    compactOff += r.byteLen;
+  }
+
+  const resp = await fetch(url, { headers: { Range: `bytes=${dataStart}-` } });
+  if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}: ${url}`);
+  const contentLen = parseInt(resp.headers.get('content-length') || '0');
+  const reader = resp.body.getReader();
+
+  let streamPos = 0, regionIdx = 0, regionWritten = 0, loaded = 0;
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value); loaded += value.length;
-    onProgress(loaded, 0);
+    loaded += value.length;
+    const pct = contentLen > 0 ? Math.round(loaded / contentLen * 100) : 0;
+    setDlStatus('loading',
+      `Downloading: ${fmtBytes(loaded)}${contentLen ? ' / ' + fmtBytes(contentLen) + ' (' + pct + '%)' : ''}`,
+      true, pct);
+    onStatus(`Downloading — ${fmtBytes(loaded)}`);
+
+    let cp = 0;
+    while (cp < value.length && regionIdx < regions.length) {
+      const r = regions[regionIdx];
+      if (streamPos < r.fileStart) {
+        const skip = Math.min(r.fileStart - streamPos, value.length - cp);
+        streamPos += skip; cp += skip; continue;
+      }
+      const dst     = writeOffset[r.name] + regionWritten;
+      const toCopy  = Math.min(r.byteLen - regionWritten, value.length - cp);
+      view.set(value.subarray(cp, cp + toCopy), dst);
+      regionWritten += toCopy; streamPos += toCopy; cp += toCopy;
+      if (regionWritten >= r.byteLen) { regionIdx++; regionWritten = 0; }
+    }
   }
-  const out = new Uint8Array(loaded);
-  let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
-  return out.buffer;
 }
 
 function setDlStatus(type, text, showBar = false, pct = 0) {
