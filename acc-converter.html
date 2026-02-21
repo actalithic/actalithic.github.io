@@ -676,7 +676,7 @@ function hfUrl(base, fname) {
 
 // ── Read safetensors header via a cheap 64 KB range request ──────────────────
 async function fetchSafetensorsHeader(url) {
-  const PROBE = 65536;
+  const PROBE = 262144;
   const resp = await fetch(url, { headers: { Range: `bytes=0-${PROBE - 1}` } });
   if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}: ${url}`);
   const probe = new Uint8Array(await resp.arrayBuffer());
