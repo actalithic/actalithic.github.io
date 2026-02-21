@@ -102,7 +102,7 @@ export const ACC_MODELS = [
     hostedBase: "https://example.com/models/llama-3.2-3b.acc",
     // Using Bartowski's public mirror — avoids Meta gated-repo 401 for on-device fallback
     hfRepo: "bartowski/Llama-3.2-3B-Instruct-GGUF",
-    hfFile: "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+    hfFile: "model.safetensors",
     hfTokenizerFile: "tokenizer.json",
     hfBase: "https://huggingface.co/unsloth/Llama-3.2-3B-Instruct/resolve/main",
     desc: "Llama 3.2 3B via ACC Engine. Fastest, lightest — great for all devices.",
