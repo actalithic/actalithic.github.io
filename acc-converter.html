@@ -676,16 +676,19 @@ function hfUrl(base, fname) {
 
 // ── Read safetensors header via a cheap 64 KB range request ──────────────────
 async function fetchSafetensorsHeader(url) {
-  const PROBE = 262144;
-  const resp = await fetch(url, { headers: { Range: `bytes=0-${PROBE - 1}` } });
-  if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}: ${url}`);
-  const probe = new Uint8Array(await resp.arrayBuffer());
-  const dv = new DataView(probe.buffer);
-  const headerLen = dv.getUint32(0, true);
-  if (headerLen > PROBE - 8) throw new Error(`Safetensors header too large (${headerLen} B)`);
-  const header    = JSON.parse(new TextDecoder().decode(probe.slice(8, 8 + headerLen)));
-  const dataStart = 8 + headerLen;
-  return { header, dataStart };
+  // Step 1: fetch just 8 bytes to read the header length field
+  const lenResp = await fetch(url, { headers: { Range: 'bytes=0-7' } });
+  if (!lenResp.ok && lenResp.status !== 206) throw new Error(`HTTP ${lenResp.status}: ${url}`);
+  const lenBuf    = new Uint8Array(await lenResp.arrayBuffer());
+  const headerLen = new DataView(lenBuf.buffer).getUint32(0, true); // lo 32 bits
+
+  // Step 2: fetch exactly the header bytes (never too small, never wasteful)
+  const end      = 8 + headerLen - 1;
+  const hdrResp  = await fetch(url, { headers: { Range: `bytes=8-${end}` } });
+  if (!hdrResp.ok && hdrResp.status !== 206) throw new Error(`HTTP ${hdrResp.status}: ${url}`);
+  const hdrBytes = new Uint8Array(await hdrResp.arrayBuffer());
+  const header   = JSON.parse(new TextDecoder().decode(hdrBytes));
+  return { header, dataStart: 8 + headerLen };
 }
 
 // ── Stream one shard → return compact Uint8Array of tensor bytes only ─────────
