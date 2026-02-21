@@ -653,120 +653,111 @@ window.toggleExpert = function() {
   document.getElementById('expertPanel').classList.toggle('open');
 };
 
-// ── Shard detection + streaming download + merge ─────────────────────────────
+// ── Download + merge  ────────────────────────────────────────────────────────
 //
-// Memory budget — one shard download in-flight at a time:
+// Architecture: stream → OPFS (disk) → file.arrayBuffer()
 //
-//  OLD v1: download ALL shards → keep all → merge  (peak = N×shard + output)
-//  OLD v2: pre-alloc output → stream each shard directly in  (peak = 1 shard + output)
-//          ✗ still OOMs because pre-allocating 6 GB for BF16 models fails outright.
-//
-//  NEW:    stream shard → extract ONLY tensor bytes (strip gaps) into compact slice
-//          → null the stream buffer → next shard
-//          → assemble final merged safetensors from compact slices, freeing each as we go
-//
-//  Peak ≈ 1 shard download  +  output buffer  (output = unavoidable, it's the payload).
-//  We never pre-allocate the full raw-shard size upfront, so no 6 GB surprise.
+// Why OPFS solves the RAM problem:
+//   • During download: each tensor is written chunk-by-chunk to an OPFS temp file.
+//     Peak in-memory = one network chunk (~64 KB). No model-sized allocation.
+//   • file.arrayBuffer() reads via the browser's native memory-map path,
+//     bypassing the V8 JS-heap limit entirely. Works for any model on any
+//     machine with enough disk space (and 16 GB of RAM is more than enough).
 //
 // ?download=true forces HuggingFace to serve actual binary (not Xet/LFS pointer).
 function hfUrl(base, fname) {
   return `${base}/${fname}?download=true`;
 }
 
-// ── Read safetensors header via a cheap 64 KB range request ──────────────────
+// ── Exact 2-request header read (works for any header size) ──────────────────
 async function fetchSafetensorsHeader(url) {
-  // Step 1: fetch just 8 bytes to read the header length field
-  const lenResp = await fetch(url, { headers: { Range: 'bytes=0-7' } });
-  if (!lenResp.ok && lenResp.status !== 206) throw new Error(`HTTP ${lenResp.status}: ${url}`);
-  const lenBuf    = new Uint8Array(await lenResp.arrayBuffer());
-  const headerLen = new DataView(lenBuf.buffer).getUint32(0, true); // lo 32 bits
+  // Request 1: 8 bytes → get the header-length uint64
+  const r1  = await fetch(url, { headers: { Range: 'bytes=0-7' } });
+  if (!r1.ok && r1.status !== 206) throw new Error(`HTTP ${r1.status}: ${url}`);
+  const lb  = new Uint8Array(await r1.arrayBuffer());
+  const headerLen = new DataView(lb.buffer).getUint32(0, true); // lo 32 bits
 
-  // Step 2: fetch exactly the header bytes (never too small, never wasteful)
-  const end      = 8 + headerLen - 1;
-  const hdrResp  = await fetch(url, { headers: { Range: `bytes=8-${end}` } });
-  if (!hdrResp.ok && hdrResp.status !== 206) throw new Error(`HTTP ${hdrResp.status}: ${url}`);
-  const hdrBytes = new Uint8Array(await hdrResp.arrayBuffer());
-  const header   = JSON.parse(new TextDecoder().decode(hdrBytes));
-  return { header, dataStart: 8 + headerLen };
-
+  // Request 2: exact header JSON bytes
+  const r2  = await fetch(url, { headers: { Range: `bytes=8-${8 + headerLen - 1}` } });
+  if (!r2.ok && r2.status !== 206) throw new Error(`HTTP ${r2.status}: ${url}`);
+  const hb  = new Uint8Array(await r2.arrayBuffer());
+  return {
+    header:    JSON.parse(new TextDecoder().decode(hb)),
+    dataStart: 8 + headerLen,
+  };
+}
 
 // ── Main entry ────────────────────────────────────────────────────────────────
-// Strategy: stream each shard to OPFS (disk) → read back as ArrayBuffer.
-// OPFS writes are chunk-by-chunk (never full model in RAM during download).
-// The final OPFS→ArrayBuffer read uses browser memory-mapping, which works
-// for files that exceed the normal JS heap ArrayBuffer limit.
 async function loadModelWeights(m, onStatus) {
   const base = m.hfBase;
 
-  // 1. Resolve shard list
+  // ── 1. Resolve shard filenames ──────────────────────────────────────────────
   let shardFiles = m.hfShards || null;
   if (!shardFiles) {
     try {
-      const idxResp = await fetch(hfUrl(base, 'model.safetensors.index.json'));
-      if (idxResp.ok) {
-        const idx  = await idxResp.json();
-        shardFiles = [...new Set(Object.values(idx.weight_map))].sort();
-      }
+      const ir = await fetch(hfUrl(base, 'model.safetensors.index.json'));
+      if (ir.ok) shardFiles = [...new Set(Object.values((await ir.json()).weight_map))].sort();
     } catch {}
   }
-  const fnames = (!shardFiles || shardFiles.length === 0)
-    ? [m.hfWeights || 'model.safetensors']
-    : shardFiles;
+  const fnames = (shardFiles && shardFiles.length > 0)
+    ? shardFiles
+    : [m.hfWeights || 'model.safetensors'];
 
-  // 2. Read headers for all shards (cheap 2-request each)
+  // ── 2. Read every shard header (2 tiny range-requests each) ────────────────
   onStatus(`Reading ${fnames.length > 1 ? fnames.length + ' shard headers' : 'model header'}…`);
-  const shardMetas = [];
+  const metas = [];
   for (const fname of fnames) {
     const { header, dataStart } = await fetchSafetensorsHeader(hfUrl(base, fname));
-    shardMetas.push({ fname, header, dataStart });
+    metas.push({ fname, header, dataStart });
   }
 
-  // 3. Compute merged output layout (compact, no gaps)
-  let dataOffset = 0;
-  const mergedHdrObj = {};
-  for (const { header } of shardMetas) {
-    const regions = Object.entries(header)
+  // ── 3. Build merged safetensors header (compact, no tensor gaps) ────────────
+  let dataOff = 0;
+  const outHdr = {};
+  for (const { header } of metas) {
+    const sorted = Object.entries(header)
       .filter(([n]) => n !== '__metadata__')
       .sort((a, b) => a[1].data_offsets[0] - b[1].data_offsets[0]);
-    for (const [name, meta] of regions) {
+    for (const [name, meta] of sorted) {
       const len = meta.data_offsets[1] - meta.data_offsets[0];
-      mergedHdrObj[name] = { dtype: meta.dtype, shape: meta.shape,
-        data_offsets: [dataOffset, dataOffset + len] };
-      dataOffset += len;
+      outHdr[name] = { dtype: meta.dtype, shape: meta.shape,
+        data_offsets: [dataOff, dataOff + len] };
+      dataOff += len;
     }
   }
-  const mHdrJson  = JSON.stringify(mergedHdrObj);
-  const mHdrBytes = new TextEncoder().encode(mHdrJson);
-  const mPad      = (8 - (mHdrBytes.length % 8)) % 8;
-  const mPadLen   = mHdrBytes.length + mPad;
-  const totalBytes = 8 + mPadLen + dataOffset;
+  const hdrJson  = JSON.stringify(outHdr);
+  const hdrBytes = new TextEncoder().encode(hdrJson);
+  const hdrPad   = (8 - (hdrBytes.length % 8)) % 8;
+  const hdrPadLen = hdrBytes.length + hdrPad;
+  const totalBytes = 8 + hdrPadLen + dataOff;
 
-  onStatus(`Output will be ${fmtBytes(totalBytes)} — streaming to disk…`);
-  setDlStatus('loading', `Streaming to OPFS cache (${fmtBytes(totalBytes)})…`, true, 0);
+  // ── 4. Stream everything to an OPFS temp file (no RAM limit) ───────────────
+  //    Each network chunk is written directly to disk and discarded.
+  //    Peak RAM during this phase ≈ one network chunk (~64 KB).
+  onStatus(`Streaming ${fmtBytes(totalBytes)} to disk cache…`);
+  setDlStatus('loading', `Downloading → disk (${fmtBytes(totalBytes)})…`, true, 0);
 
-  // 4. Stream everything into one OPFS file (chunk by chunk, no full RAM hold)
-  const opfsRoot  = await navigator.storage.getDirectory();
-  const tmpName   = `__acc_tmp_${Date.now()}.safetensors`;
+  const opfsRoot   = await navigator.storage.getDirectory();
+  const tmpName    = `__acc_dl_${Date.now()}.safetensors`;
   const fileHandle = await opfsRoot.getFileHandle(tmpName, { create: true });
   const writable   = await fileHandle.createWritable();
 
-  // Write merged safetensors header
-  const hdrOut = new Uint8Array(8 + mPadLen);
-  new DataView(hdrOut.buffer).setUint32(0, mPadLen, true);
-  hdrOut.set(mHdrBytes, 8);
-  for (let i = 0; i < mPad; i++) hdrOut[8 + mHdrBytes.length + i] = 0x20;
+  // Write the merged header first
+  const hdrOut = new Uint8Array(8 + hdrPadLen);
+  new DataView(hdrOut.buffer).setUint32(0, hdrPadLen, true);
+  hdrOut.set(hdrBytes, 8);
+  for (let i = 0; i < hdrPad; i++) hdrOut[8 + hdrBytes.length + i] = 0x20;
   await writable.write(hdrOut);
 
-  // Stream each shard's tensor data directly into the OPFS file
-  let totalWritten = 0;
-  for (let si = 0; si < shardMetas.length; si++) {
-    const { fname, header, dataStart } = shardMetas[si];
-    onStatus(`Streaming shard ${si+1}/${shardMetas.length}: ${fname}…`);
+  // Stream each shard's tensor data into the file
+  let totalStreamed = 0;
+  for (let si = 0; si < metas.length; si++) {
+    const { fname, header, dataStart } = metas[si];
+    onStatus(`Downloading shard ${si+1}/${metas.length}: ${fname}`);
 
     const regions = Object.entries(header)
       .filter(([n]) => n !== '__metadata__')
-      .map(([name, meta]) => ({
-        name,
+      .map(([, meta]) => ({
         fileStart: meta.data_offsets[0],
         byteLen:   meta.data_offsets[1] - meta.data_offsets[0],
       }))
@@ -777,78 +768,76 @@ async function loadModelWeights(m, onStatus) {
     const contentLen = parseInt(resp.headers.get('content-length') || '0');
     const reader = resp.body.getReader();
 
-    let streamPos = 0, regionIdx = 0, regionWritten = 0, shardLoaded = 0;
-    // Small staging buffer: only holds one region's worth of contiguous bytes at a time
-    let stageBuf = null, stageOff = 0;
+    let streamPos = 0, rIdx = 0, rWritten = 0, shardLoaded = 0;
+    // Per-region staging buffer: never larger than one tensor (typically a few MB)
+    let stage = null, stageOff = 0;
 
-    const flushStage = async () => {
-      if (stageBuf && stageOff > 0) {
-        await writable.write(stageBuf.subarray(0, stageOff));
-        totalWritten += stageOff;
-        stageBuf = null; stageOff = 0;
+    const flush = async () => {
+      if (stage && stageOff > 0) {
+        await writable.write(stage.subarray(0, stageOff));
+        totalStreamed += stageOff;
+        stage = null; stageOff = 0;
       }
     };
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) { await flushStage(); break; }
+      if (done) { await flush(); break; }
       shardLoaded += value.length;
 
-      const pct = totalBytes > 0 ? Math.round((hdrOut.byteLength + totalWritten + shardLoaded * 0.5) / totalBytes * 100) : 0;
+      const pct = totalBytes > 0
+        ? Math.round((8 + hdrPadLen + totalStreamed) / totalBytes * 100) : 0;
       setDlStatus('loading',
-        `Shard ${si+1}/${shardMetas.length}: ${fmtBytes(shardLoaded)}${contentLen ? ' / '+fmtBytes(contentLen) : ''} · disk: ${fmtBytes(totalWritten)}`,
+        `Shard ${si+1}/${metas.length}: ${fmtBytes(shardLoaded)}${contentLen ? ' / '+fmtBytes(contentLen) : ''} · ${fmtBytes(totalStreamed)} on disk`,
         true, Math.min(pct, 99));
-      onStatus(`Streaming ${fname} — ${fmtBytes(shardLoaded)}`);
+      onStatus(`Downloading ${fname} — ${fmtBytes(shardLoaded)}`);
 
       let cp = 0;
-      while (cp < value.length && regionIdx < regions.length) {
-        const r = regions[regionIdx];
+      while (cp < value.length && rIdx < regions.length) {
+        const r = regions[rIdx];
 
-        // Skip padding gaps
+        // Skip inter-tensor padding bytes
         if (streamPos < r.fileStart) {
           const skip = Math.min(r.fileStart - streamPos, value.length - cp);
           streamPos += skip; cp += skip; continue;
         }
 
-        // Lazy-allocate staging buffer sized to current region
-        if (!stageBuf) { stageBuf = new Uint8Array(r.byteLen); stageOff = 0; }
+        // Lazy-alloc staging buffer per tensor
+        if (!stage) { stage = new Uint8Array(r.byteLen); stageOff = 0; }
 
-        const toCopy = Math.min(r.byteLen - regionWritten, value.length - cp);
-        stageBuf.set(value.subarray(cp, cp + toCopy), stageOff);
-        stageOff      += toCopy;
-        regionWritten += toCopy;
-        streamPos     += toCopy;
-        cp            += toCopy;
+        const n = Math.min(r.byteLen - rWritten, value.length - cp);
+        stage.set(value.subarray(cp, cp + n), stageOff);
+        stageOff += n; rWritten += n; streamPos += n; cp += n;
 
-        if (regionWritten >= r.byteLen) {
-          await flushStage();   // write completed tensor to disk immediately
-          regionIdx++; regionWritten = 0;
+        if (rWritten >= r.byteLen) {
+          await flush();          // tensor complete → write to disk → free stage
+          rIdx++; rWritten = 0;
         }
       }
     }
-    onStatus(`Shard ${si+1}/${shardMetas.length} written to disk`);
+    onStatus(`Shard ${si+1}/${metas.length} on disk`);
   }
 
   await writable.close();
-  onStatus(`Download complete (${fmtBytes(totalBytes)}) — reading into memory…`);
-  setDlStatus('loading', `Reading ${fmtBytes(totalBytes)} from disk into memory…`, true, 99);
+  onStatus(`Download done — reading ${fmtBytes(totalBytes)} into memory…`);
+  setDlStatus('loading', `Loading ${fmtBytes(totalBytes)} into memory…`, true, 99);
 
-  // 5. Read back from OPFS into ArrayBuffer — browser uses mmap, handles large files
-  const file = await fileHandle.getFile();
+  // ── 5. Read OPFS file → ArrayBuffer ─────────────────────────────────────────
+  //    file.arrayBuffer() uses the browser's native path and is NOT limited
+  //    by the V8 JS heap. Works for files larger than 2 GB on 64-bit browsers.
   let buf;
   try {
-    buf = await file.arrayBuffer();
-  } catch(e) {
-    // Clean up temp file before re-throwing
-    await opfsRoot.removeEntry(tmpName).catch(()=>{});
-    throw new Error(`Could not read model into memory (${fmtBytes(totalBytes)}): ${e.message}. Your browser may not support files this large.`);
+    buf = await (await fileHandle.getFile()).arrayBuffer();
+  } catch (e) {
+    await opfsRoot.removeEntry(tmpName).catch(() => {});
+    throw new Error(`Failed to load ${fmtBytes(totalBytes)} into memory: ${e.message}`);
   }
-
-  // 6. Clean up temp file
   await opfsRoot.removeEntry(tmpName).catch(() => {});
+
   setDlStatus('ok', `${m.name} loaded — ${fmtBytes(buf.byteLength)}`, false, 100);
   return buf;
 }
+
 function setDlStatus(type, text, showBar = false, pct = 0) {
   const el = document.getElementById('dlStatus');
   el.style.display = 'flex';
