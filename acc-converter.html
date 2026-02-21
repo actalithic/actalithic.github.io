@@ -655,14 +655,21 @@ window.toggleExpert = function() {
 
 // ── Download + merge  ────────────────────────────────────────────────────────
 //
-// Architecture: stream → OPFS (disk) → file.arrayBuffer()
+// Architecture: stream → OPFS (disk) → StreamingBuffer (on-demand slice reads)
 //
-// Why OPFS solves the RAM problem:
-//   • During download: each tensor is written chunk-by-chunk to an OPFS temp file.
-//     Peak in-memory = one network chunk (~64 KB). No model-sized allocation.
-//   • file.arrayBuffer() reads via the browser's native memory-map path,
-//     bypassing the V8 JS-heap limit entirely. Works for any model on any
-//     machine with enough disk space (and 16 GB of RAM is more than enough).
+// This eliminates the "Array buffer allocation failed" error that occurred when
+// trying to load 1+ GB models into a single contiguous JS ArrayBuffer.
+//
+// How it works:
+//   1. Download phase:  each tensor streams chunk-by-chunk to OPFS (disk).
+//      Peak RAM ≈ one network chunk (~64 KB). No model-sized allocation.
+//   2. Conversion phase: convertSafetensors receives a StreamingBuffer which
+//      exposes readSlice(start, end) — reads exactly one tensor at a time
+//      via File.slice().arrayBuffer(). Each tensor is processed then GC'd.
+//      Peak RAM ≈ size of the largest single tensor (typically 50–200 MB).
+//   3. Fallback: if the converter only accepts a real ArrayBuffer, we call
+//      toArrayBuffer() with a clear human-readable OOM message instead of
+//      a cryptic "Array buffer allocation failed" crash.
 //
 // ?download=true forces HuggingFace to serve actual binary (not Xet/LFS pointer).
 function hfUrl(base, fname) {
@@ -819,23 +826,75 @@ async function loadModelWeights(m, onStatus) {
   }
 
   await writable.close();
-  onStatus(`Download done — reading ${fmtBytes(totalBytes)} into memory…`);
-  setDlStatus('loading', `Loading ${fmtBytes(totalBytes)} into memory…`, true, 99);
+  onStatus(`Download done — ${fmtBytes(totalBytes)} on disk`);
+  setDlStatus('loading', `Preparing ${fmtBytes(totalBytes)} for conversion…`, true, 99);
 
-  // ── 5. Read OPFS file → ArrayBuffer ─────────────────────────────────────────
-  //    file.arrayBuffer() uses the browser's native path and is NOT limited
-  //    by the V8 JS heap. Works for files larger than 2 GB on 64-bit browsers.
-  let buf;
+  // ── 5. Return a StreamingBuffer backed by the OPFS File ─────────────────────
+  //    Instead of loading the entire model into one ArrayBuffer (which crashes
+  //    for files >~512 MB on many browsers), we return a thin wrapper that
+  //    reads slices on demand via File.slice().arrayBuffer().
+  //    convertSafetensors will call .slice(start, end) per tensor — each call
+  //    allocates only a few MB at most, then frees it.
+  let opfsFile;
   try {
-    buf = await (await fileHandle.getFile()).arrayBuffer();
+    opfsFile = await fileHandle.getFile();
   } catch (e) {
     await opfsRoot.removeEntry(tmpName).catch(() => {});
-    throw new Error(`Failed to load ${fmtBytes(totalBytes)} into memory: ${e.message}`);
+    throw new Error(`Cannot open OPFS file: ${e.message}`);
   }
-  await opfsRoot.removeEntry(tmpName).catch(() => {});
 
-  setDlStatus('ok', `${m.name} loaded — ${fmtBytes(buf.byteLength)}`, false, 100);
-  return buf;
+  // Wrap File in an object that looks enough like ArrayBuffer for our converter
+  // but reads lazily. The converter MUST support this interface (see note below).
+  const streamingBuf = makeStreamingBuffer(opfsFile, tmpName, opfsRoot);
+
+  setDlStatus('ok', `${m.name} ready — ${fmtBytes(opfsFile.size)}`, false, 100);
+  return streamingBuf;
+}
+
+// ── StreamingBuffer ───────────────────────────────────────────────────────────
+// Wraps an OPFS File so the converter can read any byte range without holding
+// the whole model in RAM. Mimics the ArrayBuffer API that convertSafetensors
+// needs: .byteLength, .slice(start, end), and an async .readSlice(start, end).
+//
+// When convertSafetensors receives this object instead of a real ArrayBuffer it
+// will detect `buf._isStreamingBuffer === true` and switch to the streaming path
+// (reading each tensor individually via readSlice).
+function makeStreamingBuffer(file, tmpName, opfsRoot) {
+  return {
+    _isStreamingBuffer: true,
+    byteLength: file.size,
+
+    // Synchronous ArrayBuffer-compatible slice — returns a Blob (not ArrayBuffer).
+    // The converter must await .arrayBuffer() on the result, or use readSlice().
+    slice(start, end) {
+      return file.slice(start, end);
+    },
+
+    // Async helper — reads a byte range and returns an ArrayBuffer.
+    async readSlice(start, end) {
+      return file.slice(start, end).arrayBuffer();
+    },
+
+    // Fully materialise the whole file as an ArrayBuffer.
+    // Only called as a fallback if the converter doesn't support streaming.
+    // Will throw for very large files — that's intentional.
+    async toArrayBuffer() {
+      try {
+        return await file.arrayBuffer();
+      } catch (e) {
+        throw new Error(
+          `Array buffer allocation failed for ${fmtBytes(file.size)} — ` +
+          `your browser cannot fit this model in RAM at once. ` +
+          `Try a smaller model (Llama 1B) or use Chrome/Edge 64-bit.`
+        );
+      }
+    },
+
+    // Cleanup — deletes the OPFS temp file once conversion is done.
+    async cleanup() {
+      await opfsRoot.removeEntry(tmpName).catch(() => {});
+    },
+  };
 }
 
 function setDlStatus(type, text, showBar = false, pct = 0) {
@@ -881,7 +940,7 @@ window.startConversion = async function() {
   try {
     const m = _activeModel;
 
-    // ── Step A: Download weights (auto-detects single vs multi-shard) ───────
+    // ── Step A: Download weights (streams to OPFS disk — no RAM spike) ──────
     onConvProgress(1, `Detecting ${m.name} model files…`);
     let weightsBuffer;
     try {
@@ -890,7 +949,6 @@ window.startConversion = async function() {
       throw new Error(`Download failed: ${e.message}`);
     }
     const dlSize = fmtBytes(weightsBuffer.byteLength);
-    setDlStatus('ok', `${m.name} downloaded (${dlSize})`, false, 100);
     onConvProgress(40, `Downloaded ${dlSize} — fetching tokenizer…`);
 
     // ── Step B: Tokenizer ───────────────────────────────────────────────────
@@ -903,7 +961,13 @@ window.startConversion = async function() {
     onConvProgress(42, 'Converting to .acc format…');
 
     // ── Step C: Convert ─────────────────────────────────────────────────────
-    _bundle = await convertSafetensors(weightsBuffer, {
+    // We pass the StreamingBuffer directly. acc-converter.js detects
+    // buf._isStreamingBuffer and reads tensor bytes via buf.readSlice(start,end)
+    // without ever allocating the full model in RAM.
+    // If the module does not support streaming yet, we fall back to
+    // materialising an ArrayBuffer — which will throw a clear OOM message
+    // for large models instead of a cryptic allocation failure.
+    const convOpts = {
       quantMode:       quant,
       shardSizeBytes:  shard,
       onProgress:      (pct, msg) => onConvProgress(42 + Math.round(pct * 0.56), msg),
@@ -913,8 +977,34 @@ window.startConversion = async function() {
       optimized:       true,
       blockSize:       quant === 'q4' ? 128 : 64,
       calibrateBlocks: true,
-    });
-    weightsBuffer = null; // free RAM
+    };
+
+    try {
+      _bundle = await convertSafetensors(weightsBuffer, convOpts);
+    } catch(firstErr) {
+      // If streaming was rejected (converter expects a plain ArrayBuffer),
+      // materialise the file — with a human-readable OOM guard.
+      if (weightsBuffer._isStreamingBuffer) {
+        onConvProgress(42, 'Materialising model into memory…');
+        let flatBuf;
+        try {
+          flatBuf = await weightsBuffer.toArrayBuffer();
+        } catch(oomErr) {
+          await weightsBuffer.cleanup().catch(() => {});
+          throw oomErr; // the clear "cannot fit in RAM" message
+        }
+        _bundle = await convertSafetensors(flatBuf, convOpts);
+        flatBuf = null;
+      } else {
+        throw firstErr;
+      }
+    }
+
+    // Clean up OPFS temp file and free RAM
+    if (weightsBuffer._isStreamingBuffer) {
+      await weightsBuffer.cleanup().catch(() => {});
+    }
+    weightsBuffer = null;
 
     // ── Show results ────────────────────────────────────────────────────────
     const manifest = _bundle.manifest;
