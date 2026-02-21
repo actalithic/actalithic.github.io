@@ -529,7 +529,8 @@ const MODELS = [
     outputName:  'mistral-7b-instruct',
     desc:        'Well-rounded general-purpose model. Best balance of speed and quality.',
     tags:        [['Middle', 'amber'], ['Mistral', 'purple'], ['4 GB', 'blue']],
-    hfBase:      'https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3/resolve/main',
+    // unsloth mirror is public (no login required); has model.safetensors.index.json
+    hfBase:      'https://huggingface.co/unsloth/mistral-7b-instruct-v0.3/resolve/main',
     hfWeights:   'model.safetensors',
     hfTokenizer: 'tokenizer.json',
   },
@@ -544,6 +545,8 @@ const MODELS = [
     desc:        'Reasoning model with step-by-step thinking. Needs a powerful device.',
     tags:        [['Advanced', 'purple'], ['Reasoning', 'blue'], ['5 GB', 'amber']],
     hfBase:      'https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/resolve/main',
+    // No model.safetensors.index.json in this repo — shards are hardcoded here
+    hfShards:    ['model-00001-of-000002.safetensors', 'model-00002-of-000002.safetensors'],
     hfWeights:   'model.safetensors',
     hfTokenizer: 'tokenizer.json',
   },
@@ -650,68 +653,334 @@ window.toggleExpert = function() {
   document.getElementById('expertPanel').classList.toggle('open');
 };
 
-// ── Shard detection + download + merge ───────────────────────────────────────
-// Safetensors large models split weights into multiple shard files.
-// We detect this via model.safetensors.index.json, download all shards,
-// then merge them into one combined safetensors buffer for convertSafetensors.
+// ── Shard detection + streaming download + merge ─────────────────────────────
+//
+// Memory strategy: one shard in RAM at a time.
+//
+// OLD (bad):  download shard 1 → keep → download shard 2 → keep → merge all
+//             Peak = sum(all shards) + merged output  ← tab-killing for 3×1.3 GB
+//
+// NEW (good): pre-allocate one output buffer sized to hold all tensor data,
+//             then for each shard: stream → parse header → write tensors directly
+//             into the output buffer → null the shard → move on.
+//             Peak ≈ 1 shard + output buffer  (roughly half the old peak).
+//
+// Append ?download=true so HuggingFace serves the actual binary for
+// Xet/LFS-backed files instead of returning a pointer file.
+function hfUrl(base, fname) {
+  return `${base}/${fname}?download=true`;
+}
 
-async function loadModelWeights(m, onStatus) {
-  const base = m.hfBase;
+// ── Step 1: fetch just enough bytes to read a safetensors header ─────────────
+// Safetensors layout: [8-byte LE uint64 header_len][header JSON bytes][data...]
+// We fetch the first 64 KB (more than enough for any header), parse it,
+// and return the tensor metadata + where in the stream tensor data begins.
+async function fetchSafetensorsHeader(url) {
+  // Range request: first 64 KB covers all known safetensors headers
+  const PROBE = 65536;
+  const resp = await fetch(url, { headers: { Range: `bytes=0-${PROBE - 1}` } });
+  if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}: ${url}`);
+  const probe = new Uint8Array(await resp.arrayBuffer());
+  const dv = new DataView(probe.buffer);
+  const headerLen = dv.getUint32(0, true); // lo 32 bits (hi bits always 0 in practice)
+  if (headerLen > PROBE - 8) throw new Error(`Safetensors header too large (${headerLen} bytes)`);
+  const headerStr = new TextDecoder().decode(probe.slice(8, 8 + headerLen));
+  const header = JSON.parse(headerStr);
+  const dataStart = 8 + headerLen; // byte offset where tensor data begins in the file
+  return { header, dataStart };
+}
 
-  // ── Try index.json to detect multi-shard ──────────────────────────────────
-  let shardFiles = null;
-  try {
-    const idxResp = await fetch(`${base}/model.safetensors.index.json`);
-    if (idxResp.ok) {
-      const idx = await idxResp.json();
-      // weight_map: { "tensor_name": "shard_filename", ... }
-      const unique = [...new Set(Object.values(idx.weight_map))].sort();
-      shardFiles = unique;
-    }
-  } catch {}
+// ── Step 2: stream a shard and write tensors straight into `outView` ─────────
+// `tensorMap` is built up across shards: { name → { dtype, shape, data_offsets } }
+// `writePtr` is a { value } box so callers can advance it across shards.
+async function streamShardIntoBuffer(url, outView, writePtr, tensorMap, onProgress) {
+  // First get the header via a cheap range request
+  const { header, dataStart } = await fetchSafetensorsHeader(url);
 
-  if (shardFiles && shardFiles.length > 1) {
-    // ── Multi-shard path ────────────────────────────────────────────────────
-    onStatus(`Found ${shardFiles.length} shards — downloading…`);
-    const shardBuffers = [];
-    for (let i = 0; i < shardFiles.length; i++) {
-      const fname = shardFiles[i];
-      const buf = await fetchWithProgress(
-        `${base}/${fname}`,
-        (loaded, total) => {
-          const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
-          setDlStatus('loading',
-            `Shard ${i+1}/${shardFiles.length}: ${fname} — ${fmtBytes(loaded)}${total ? ' / ' + fmtBytes(total) + ' (' + pct + '%)' : ''}`,
-            true, pct || (i / shardFiles.length * 100));
-        }
-      );
-      shardBuffers.push(buf);
-    }
-    onStatus(`Merging ${shardFiles.length} shards…`);
-    setDlStatus('loading', `Merging ${shardFiles.length} shards into one buffer…`, false, 100);
-    return mergeSafetensors(shardBuffers);
+  // Now stream the full file; we only copy bytes that belong to tensors.
+  const resp = await fetch(url, { headers: { Range: `bytes=${dataStart}-` } });
+  if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status} streaming ${url}`);
 
-  } else {
-    // ── Single file path ────────────────────────────────────────────────────
-    const fname = shardFiles?.[0] || 'model.safetensors';
-    return fetchWithProgress(
-      `${base}/${fname}`,
-      (loaded, total) => {
-        const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
-        setDlStatus('loading',
-          `Downloading ${fname} — ${fmtBytes(loaded)}${total ? ' / ' + fmtBytes(total) + ' (' + pct + '%)' : ''}`,
-          true, pct);
+  const contentLength = parseInt(resp.headers.get('content-length') || '0');
+  const reader = resp.body.getReader();
+
+  // Build a sorted list of tensor regions in file-offset order so we can
+  // copy them as they arrive in the stream without random-access seeks.
+  const regions = Object.entries(header)
+    .filter(([n]) => n !== '__metadata__')
+    .map(([name, meta]) => ({
+      name,
+      dtype:      meta.dtype,
+      shape:      meta.shape,
+      fileStart:  meta.data_offsets[0], // relative to dataStart
+      fileEnd:    meta.data_offsets[1],
+      byteLen:    meta.data_offsets[1] - meta.data_offsets[0],
+    }))
+    .sort((a, b) => a.fileStart - b.fileStart);
+
+  // Register tensors in the output map with their final positions
+  for (const r of regions) {
+    tensorMap[r.name] = {
+      dtype:        r.dtype,
+      shape:        r.shape,
+      data_offsets: [writePtr.value, writePtr.value + r.byteLen],
+    };
+    writePtr.value += r.byteLen;
+  }
+  // Rewind writePtr — we'll advance it again as we actually write bytes
+  // (recalculate from the registered offsets instead)
+  // Actually: capture the start offset per region from the map we just built.
+  // Simpler: keep a per-region write cursor from the map entries.
+
+  // We walk the stream and copy bytes region-by-region.
+  let regionIdx = 0;
+  let streamPos = 0;          // bytes consumed from stream (relative to dataStart)
+  let regionWritten = 0;      // bytes written into current region
+  let totalLoaded = 0;
+
+  // Carry buffer for partial chunk leftovers
+  let carry = null;
+
+  const flushChunk = (chunk) => {
+    let chunkPos = 0;
+    while (chunkPos < chunk.length && regionIdx < regions.length) {
+      const r = regions[regionIdx];
+      const outStart = tensorMap[r.name].data_offsets[0]; // absolute in outView
+      const remaining = r.byteLen - regionWritten;
+
+      // Skip bytes before this region (padding / alignment bytes between tensors)
+      const gapStart = r.fileStart;
+      if (streamPos < gapStart) {
+        const skip = Math.min(gapStart - streamPos, chunk.length - chunkPos);
+        streamPos += skip;
+        chunkPos  += skip;
+        continue;
       }
-    );
+
+      // Copy as many bytes as available into this region
+      const toCopy = Math.min(remaining, chunk.length - chunkPos);
+      outView.set(chunk.subarray(chunkPos, chunkPos + toCopy), outStart + regionWritten);
+      regionWritten += toCopy;
+      chunkPos      += toCopy;
+      streamPos     += toCopy;
+
+      if (regionWritten >= r.byteLen) {
+        regionIdx++;
+        regionWritten = 0;
+      }
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalLoaded += value.length;
+    onProgress(totalLoaded, contentLength);
+
+    // Prepend any leftover carry bytes from previous chunk
+    const chunk = carry ? concatU8(carry, value) : value;
+    carry = null;
+    flushChunk(chunk);
   }
 }
 
-async function fetchWithProgress(url, onProgress) {
+function concatU8(a, b) {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0); out.set(b, a.length);
+  return out;
+}
+
+// ── Step 3: quick-scan all shard headers to know total tensor data size ───────
+// This costs one range-request per shard (~tiny) so we can pre-allocate exactly.
+async function scanShardSizes(base, shardFiles) {
+  let totalData = 0;
+  const metas = [];
+  for (const fname of shardFiles) {
+    const { header, dataStart } = await fetchSafetensorsHeader(hfUrl(base, fname));
+    let shardDataSize = 0;
+    const tensors = [];
+    for (const [name, meta] of Object.entries(header)) {
+      if (name === '__metadata__') continue;
+      const len = meta.data_offsets[1] - meta.data_offsets[0];
+      shardDataSize = Math.max(shardDataSize, meta.data_offsets[1]);
+      tensors.push({ name, dtype: meta.dtype, shape: meta.shape,
+                     fileStart: meta.data_offsets[0], fileEnd: meta.data_offsets[1] });
+    }
+    totalData += shardDataSize;
+    metas.push({ fname, header, dataStart, tensors, shardDataSize });
+  }
+  return { totalData, metas };
+}
+
+// ── Main entry: detect shards → pre-alloc → stream each shard in place ───────
+async function loadModelWeights(m, onStatus) {
+  const base = m.hfBase;
+
+  // ── 1. Resolve shard list ─────────────────────────────────────────────────
+  let shardFiles = m.hfShards || null;
+  if (!shardFiles) {
+    try {
+      const idxResp = await fetch(hfUrl(base, 'model.safetensors.index.json'));
+      if (idxResp.ok) {
+        const idx = await idxResp.json();
+        shardFiles = [...new Set(Object.values(idx.weight_map))].sort();
+      }
+    } catch {}
+  }
+
+  // ── 2. Single-file fast path ──────────────────────────────────────────────
+  if (!shardFiles || shardFiles.length <= 1) {
+    const fname = shardFiles?.[0] || m.hfWeights || 'model.safetensors';
+    onStatus(`Downloading ${fname}…`);
+    return fetchSingleWithProgress(hfUrl(base, fname), (loaded, total) => {
+      const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
+      setDlStatus('loading',
+        `Downloading ${fname} — ${fmtBytes(loaded)}${total ? ' / ' + fmtBytes(total) + ' (' + pct + '%)' : ''}`,
+        true, pct);
+    });
+  }
+
+  // ── 3. Multi-shard: scan headers first (cheap range requests) ────────────
+  onStatus(`Scanning ${shardFiles.length} shard headers…`);
+  setDlStatus('loading', `Reading shard manifests (${shardFiles.length} files)…`, false, 0);
+  const { totalData, metas } = await scanShardSizes(base, shardFiles);
+
+  // ── 4. Build the merged safetensors output buffer in one allocation ───────
+  // Merged safetensors layout:
+  //   [8 bytes header_len][merged header JSON + padding][all tensor data]
+  //
+  // We need to build the merged header first so we know its size.
+  // Assign output positions to each tensor (sorted for determinism).
+  let dataOffset = 0;
+  const mergedHeader = {};
+  for (const { tensors } of metas) {
+    for (const t of tensors) {
+      mergedHeader[t.name] = {
+        dtype:        t.dtype,
+        shape:        t.shape,
+        data_offsets: [dataOffset, dataOffset + (t.fileEnd - t.fileStart)],
+      };
+      dataOffset += (t.fileEnd - t.fileStart);
+    }
+  }
+
+  const headerJson  = JSON.stringify(mergedHeader);
+  const headerBytes = new TextEncoder().encode(headerJson);
+  const pad         = (8 - (headerBytes.length % 8)) % 8;
+  const paddedLen   = headerBytes.length + pad;
+  const totalBytes  = 8 + paddedLen + dataOffset;
+
+  onStatus(`Pre-allocating ${fmtBytes(totalBytes)} output buffer…`);
+  const out = new Uint8Array(totalBytes);
+  const dv  = new DataView(out.buffer);
+  dv.setUint32(0, paddedLen, true);
+  dv.setUint32(4, 0, true);
+  out.set(headerBytes, 8);
+  for (let i = 0; i < pad; i++) out[8 + headerBytes.length + i] = 0x20;
+
+  // The tensor data section starts at byte (8 + paddedLen) in `out`.
+  // mergedHeader[name].data_offsets are relative to the tensor data section.
+  const dataSection = new Uint8Array(out.buffer, 8 + paddedLen, dataOffset);
+
+  // ── 5. Stream each shard → write directly into dataSection → null shard ──
+  // Build a lookup: tensor name → write offset within dataSection
+  const tensorWriteOffset = {};
+  for (const [name, meta] of Object.entries(mergedHeader)) {
+    tensorWriteOffset[name] = meta.data_offsets[0];
+  }
+
+  let totalDownloaded = 0;
+  const totalDownloadBytes = metas.reduce((s, m) => s + m.shardDataSize, 0);
+
+  for (let si = 0; si < metas.length; si++) {
+    const { fname, header, dataStart } = metas[si];
+    onStatus(`Streaming shard ${si + 1}/${metas.length}: ${fname}`);
+
+    // Stream tensor data (skip the header we already have)
+    const url  = hfUrl(base, fname);
+    const resp = await fetch(url, { headers: { Range: `bytes=${dataStart}-` } });
+    if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}: ${fname}`);
+    const contentLen = parseInt(resp.headers.get('content-length') || '0');
+    const reader = resp.body.getReader();
+
+    // Sort tensors in file order so we can copy linearly as bytes arrive
+    const regions = Object.entries(header)
+      .filter(([n]) => n !== '__metadata__')
+      .map(([name, meta]) => ({
+        name,
+        fileStart: meta.data_offsets[0],
+        fileEnd:   meta.data_offsets[1],
+        byteLen:   meta.data_offsets[1] - meta.data_offsets[0],
+      }))
+      .sort((a, b) => a.fileStart - b.fileStart);
+
+    let streamPos     = 0; // bytes consumed from this shard's data stream
+    let regionIdx     = 0;
+    let regionWritten = 0;
+    let shardLoaded   = 0;
+    let carry         = null; // leftover bytes between chunks
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      shardLoaded   += value.length;
+      totalDownloaded += value.length;
+
+      const pct = totalDownloadBytes > 0
+        ? Math.round(totalDownloaded / totalDownloadBytes * 100) : 0;
+      setDlStatus('loading',
+        `Shard ${si + 1}/${metas.length}: ${fname} — ${fmtBytes(shardLoaded)}${contentLen ? ' / ' + fmtBytes(contentLen) : ''} (total ${fmtBytes(totalDownloaded)})`,
+        true, pct);
+
+      // Merge carry + new chunk
+      let chunk = carry ? concatU8(carry, value) : value;
+      carry = null;
+
+      // Walk through chunk copying bytes into the right tensor slots
+      let cp = 0; // chunk pointer
+      while (cp < chunk.length && regionIdx < regions.length) {
+        const r = regions[regionIdx];
+
+        // Skip padding / alignment bytes before this region
+        if (streamPos < r.fileStart) {
+          const skip = Math.min(r.fileStart - streamPos, chunk.length - cp);
+          streamPos += skip; cp += skip;
+          continue;
+        }
+
+        const dstOffset = tensorWriteOffset[r.name] + regionWritten;
+        const toCopy    = Math.min(r.byteLen - regionWritten, chunk.length - cp);
+        dataSection.set(chunk.subarray(cp, cp + toCopy), dstOffset);
+        regionWritten += toCopy;
+        streamPos     += toCopy;
+        cp            += toCopy;
+
+        if (regionWritten >= r.byteLen) { regionIdx++; regionWritten = 0; }
+      }
+
+      // Save unconsumed tail (shouldn't happen at end-of-regions, but safe)
+      if (cp < chunk.length) carry = chunk.slice(cp);
+    }
+
+    // ── Shard done — release all references so GC can reclaim it ─────────
+    carry = null;
+    // (reader is exhausted; no buffer held)
+    onStatus(`Shard ${si + 1}/${metas.length} done — RAM freed`);
+  }
+
+  onStatus('All shards streamed — returning merged buffer');
+  setDlStatus('ok', `All ${metas.length} shards downloaded & merged (${fmtBytes(totalBytes)})`, false, 100);
+  return out.buffer;
+}
+
+// ── Single-file streaming download (no merge needed) ─────────────────────────
+async function fetchSingleWithProgress(url, onProgress) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${url}`);
   const total = parseInt(resp.headers.get('content-length') || '0');
   let loaded = 0;
-  const reader = resp.body.getReader(), chunks = [];
+  const reader = resp.body.getReader();
+  const chunks = [];
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -721,65 +990,6 @@ async function fetchWithProgress(url, onProgress) {
   const out = new Uint8Array(loaded);
   let off = 0;
   for (const c of chunks) { out.set(c, off); off += c.length; }
-  return out.buffer;
-}
-
-// Merge multiple safetensors ArrayBuffers into one combined safetensors buffer.
-// Each shard: [8 bytes header_len][header JSON][tensor data bytes]
-// We collect all tensors from all shards and build a new merged safetensors.
-function mergeSafetensors(buffers) {
-  const allTensors = []; // { name, dtype, shape, data: Uint8Array }
-
-  for (const buf of buffers) {
-    const view = new DataView(buf);
-    const headerLen = view.getUint32(0, true); // lo 32 bits sufficient
-    const headerStr = new TextDecoder().decode(new Uint8Array(buf, 8, headerLen));
-    const header = JSON.parse(headerStr);
-    const dataStart = 8 + headerLen;
-
-    for (const [name, meta] of Object.entries(header)) {
-      if (name === '__metadata__') continue;
-      const start = dataStart + meta.data_offsets[0];
-      const len   = meta.data_offsets[1] - meta.data_offsets[0];
-      // Copy data out (buf will be GC'd after loop)
-      const data = new Uint8Array(buf, start, len).slice();
-      allTensors.push({ name, dtype: meta.dtype, shape: meta.shape, data });
-    }
-  }
-
-  // Build new merged header + data
-  let dataOffset = 0;
-  const newHeader = {};
-  for (const t of allTensors) {
-    newHeader[t.name] = {
-      dtype: t.dtype,
-      shape: t.shape,
-      data_offsets: [dataOffset, dataOffset + t.data.byteLength],
-    };
-    dataOffset += t.data.byteLength;
-  }
-
-  const headerJson  = JSON.stringify(newHeader);
-  const headerBytes = new TextEncoder().encode(headerJson);
-  // Header must be padded to 8-byte alignment (safetensors spec)
-  const pad        = (8 - (headerBytes.length % 8)) % 8;
-  const paddedLen  = headerBytes.length + pad;
-
-  const out = new Uint8Array(8 + paddedLen + dataOffset);
-  const dv  = new DataView(out.buffer);
-  dv.setUint32(0, paddedLen, true); // header length lo
-  dv.setUint32(4, 0, true);         // header length hi
-  out.set(headerBytes, 8);
-  // pad with spaces (valid JSON whitespace)
-  for (let i = 0; i < pad; i++) out[8 + headerBytes.length + i] = 0x20;
-
-  let writeOff = 8 + paddedLen;
-  for (const t of allTensors) {
-    out.set(t.data, writeOff);
-    writeOff += t.data.byteLength;
-    t.data = null; // free as we go
-  }
-
   return out.buffer;
 }
 
@@ -841,7 +1051,7 @@ window.startConversion = async function() {
     // ── Step B: Tokenizer ───────────────────────────────────────────────────
     let tokenizerJson = null;
     try {
-      const tr = await fetch(`${m.hfBase}/${m.hfTokenizer}`);
+      const tr = await fetch(hfUrl(m.hfBase, m.hfTokenizer));
       if (tr.ok) tokenizerJson = await tr.text();
     } catch {}
 
