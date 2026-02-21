@@ -83,12 +83,12 @@ async function handleLoad(model) {
       await initFromBundle(bundle, model);
       return;
     } catch (e) {
-      progress(6, `CDN failed (${e.message}), falling back to HuggingFace…`, "download");
+        progress(6, `CDN unavailable (${e.message}), falling back to on-device compilation…`, "compile");
     }
   }
 
-  // 3. HuggingFace download + on-device conversion
-  progress(5, `Downloading from HuggingFace… (first time only)`, "download");
+  // 3. Download from CDN / compile on-device (first time only)
+  progress(5, `Downloading & compiling model (first run only — will be cached)…`, "compile");
 
   const [safetensors, tokenizerJson] = await Promise.all([
     downloadWithProgress(
@@ -149,23 +149,35 @@ async function downloadHostedACC(model) {
   return { manifest, config, tokenizer, shards, kernels };
 }
 
+// ─── Mobile detection ─────────────────────────────────────────────────────────
+const IS_MOBILE_WORKER = /Android|iPhone|iPad|iPod/i.test(self.navigator?.userAgent || "");
+
 // ─── Init GPU from bundle ──────────────────────────────────────────────────────
 async function initFromBundle(bundle, model) {
   _manifest = bundle.manifest;
   _config   = bundle.config;
 
   progress(84, "Requesting GPU adapter…", "gpu");
-  if (!self.navigator?.gpu) throw new Error("WebGPU not available in this browser. Use Chrome 113+.");
+  if (!self.navigator?.gpu) throw new Error("WebGPU not available. Use Chrome 113+ on desktop, or Chrome 121+ on Android.");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-  if (!adapter) throw new Error("No WebGPU adapter found. Enable WebGPU in browser flags.");
+  if (!adapter) throw new Error("No WebGPU adapter found. Make sure WebGPU is enabled in your browser.");
 
   const limits = adapter.limits;
-  _device = await adapter.requestDevice({
-    requiredLimits: {
-      maxBufferSize:               Math.min(limits.maxBufferSize,               2 * 1024 * 1024 * 1024),
-      maxStorageBufferBindingSize: Math.min(limits.maxStorageBufferBindingSize, 2 * 1024 * 1024 * 1024),
-    },
-  });
+
+  // Mobile (Android Chrome): don't request high limits — Android GPU drivers report
+  // different limits than they can actually allocate, causing "invalid" device errors.
+  // On mobile we let the driver use its own defaults (safe path).
+  let deviceDesc = {};
+  if (!IS_MOBILE_WORKER) {
+    const maxBuf = Math.min(limits.maxBufferSize, 1 * 1024 * 1024 * 1024);
+    const maxSSBO = Math.min(limits.maxStorageBufferBindingSize, 1 * 1024 * 1024 * 1024);
+    // Only request limits that are actually above default to avoid driver bugs
+    if (maxBuf > 256 * 1024 * 1024 || maxSSBO > 128 * 1024 * 1024) {
+      deviceDesc.requiredLimits = { maxBufferSize: maxBuf, maxStorageBufferBindingSize: maxSSBO };
+    }
+  }
+
+  _device = await adapter.requestDevice(deviceDesc);
   _device.lost.then(info => {
     post({ type: "error", message: `GPU device lost: ${info.reason}` });
     _loaded = false;
@@ -174,7 +186,14 @@ async function initFromBundle(bundle, model) {
   progress(86, "Compiling WGSL kernels…", "gpu");
   const kSrc = bundle.kernels || _kernelSrc;
   if (!kSrc) throw new Error("kernels.wgsl missing — check webgpu/ folder is included");
-  await compilePipelines(kSrc);
+  try {
+    await compilePipelines(kSrc);
+  } catch (e) {
+    if (IS_MOBILE_WORKER) {
+      throw new Error("Shader compilation failed on this device. WebGPU model inference requires a recent desktop GPU or a high-end Android device with Chrome 121+.");
+    }
+    throw e;
+  }
 
   progress(89, "Uploading weights to GPU…", "gpu");
   const total = bundle.shards.length;
@@ -189,8 +208,9 @@ async function initFromBundle(bundle, model) {
   }
 
   // Pre-allocate KV cache on GPU for fast autoregressive decode
+  // On mobile: use smaller maxSeq to avoid OOM on limited VRAM
   progress(97, "Allocating KV cache…", "gpu");
-  allocateKVCache();
+  allocateKVCache(IS_MOBILE_WORKER ? 2048 : undefined);
 
   progress(98, "Warming up kernels…", "gpu");
   try { await forwardPass([_tokenizer?.bosId ?? 1], 0, true); } catch {}
@@ -198,16 +218,16 @@ async function initFromBundle(bundle, model) {
   _loaded = true;
   _kvPos  = 0;
   post({ type: "ready", modelId: _modelId });
-  progress(100, "Ready ✓", "done");
+  progress(100, "Ready", "done");
 }
 
 // ─── KV Cache allocation ──────────────────────────────────────────────────────
-function allocateKVCache() {
+function allocateKVCache(maxSeqOverride) {
   if (!_config) return;
   const nLayers = _config.num_hidden_layers;
   const nKV     = _config.num_key_value_heads || _config.num_attention_heads;
   const headDim = Math.floor(_config.hidden_size / _config.num_attention_heads);
-  const maxSeq  = _config.max_position_embeddings || 4096;
+  const maxSeq  = maxSeqOverride || _config.max_position_embeddings || 4096;
 
   // Each layer needs: key [maxSeq × nKV × headDim] and val [maxSeq × nKV × headDim]
   const sliceBytes = maxSeq * nKV * headDim * 4;  // float32

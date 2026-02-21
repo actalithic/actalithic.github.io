@@ -298,7 +298,24 @@
   <div>
     <div class="conv-page-title">.acc <span>Converter</span></div>
     <div class="conv-page-sub">
-      Convert models to Actalithic's browser-native format — entirely in your browser. Pick a preset from HuggingFace or upload your own safetensors. Nothing leaves your device.
+      Admin tool — compile LocalLLM models to Actalithic's browser-native format. Select a model, download from HuggingFace, convert, then upload the .acc bundle to the CDN.
+    </div>
+  </div>
+
+  <!-- ══ STEP 0: Target model ══ -->
+  <div class="conv-card">
+    <div class="conv-card-title">
+      <span class="material-icons-round">model_training</span>
+      0 — Select target model
+    </div>
+    <div class="conv-card-sub">
+      Choose which LocalLLM model you are compiling. This auto-fills the HuggingFace repo and arch settings below.
+    </div>
+
+    <div class="hf-model-grid" id="targetModelGrid"></div>
+
+    <div id="targetModelInfo" style="display:none;font-size:.7rem;color:var(--green);padding:.5rem .85rem;background:var(--green-bg);border:1px solid var(--green-dim);border-radius:6px;line-height:1.7">
+      <strong id="targetModelName"></strong> — <span id="targetModelNote"></span>
     </div>
   </div>
 
@@ -306,7 +323,7 @@
   <div class="conv-card">
     <div class="conv-card-title">
       <span class="material-icons-round">input</span>
-      1 — Choose model source
+      1 — Load model weights
     </div>
 
     <div class="source-tabs">
@@ -320,7 +337,7 @@
 
     <!-- HF panel -->
     <div id="hfPanel" style="display:flex;flex-direction:column;gap:.9rem">
-      <div class="hf-catalogue-label">Popular models — click to select</div>
+      <div class="hf-catalogue-label">Source — auto-filled when you select a model above</div>
       <div class="hf-model-grid" id="hfModelGrid"></div>
 
       <div style="font-size:.63rem;color:var(--muted)">Or enter any HuggingFace repo:</div>
@@ -566,13 +583,81 @@ fetch('./webgpu/kernels.wgsl').then(r => r.text()).then(t => { _kernelsSrc = t; 
 
 // ── HF catalogue ─────────────────────────────────────────────────────────────
 const HF_MODELS = [
-  { id:'google/gemma-3-4b-it',             name:'Gemma 3 4B',      creator:'Google',     size:'~3.3 GB', arch:'gemma',   file:'model.safetensors', tok:'tokenizer.json', tags:['light','multilingual'],    desc:'Fast & multilingual.' },
-  { id:'Qwen/Qwen2.5-7B-Instruct',         name:'Qwen 2.5 7B',     creator:'Alibaba',    size:'~4.5 GB', arch:'llama',   file:'model.safetensors', tok:'tokenizer.json', tags:['coding','math'],            desc:'Best coding & math at 7B.' },
-  { id:'mistralai/Mistral-7B-Instruct-v0.3',name:'Mistral 7B v0.3',creator:'Mistral AI', size:'~4 GB',   arch:'mistral', file:'model.safetensors', tok:'tokenizer.json', tags:['general','fast'],           desc:'Reliable all-rounder.' },
-  { id:'meta-llama/Llama-3.2-3B-Instruct', name:'Llama 3.2 3B',    creator:'Meta',       size:'~2 GB',   arch:'llama',   file:'model.safetensors', tok:'tokenizer.json', tags:['light','phone-friendly'],   desc:'Ultra-light. Runs on phones.' },
-  { id:'microsoft/phi-4-mini-instruct',     name:'Phi-4 Mini',      creator:'Microsoft',  size:'~2.5 GB', arch:'phi',     file:'model.safetensors', tok:'tokenizer.json', tags:['reasoning','compact'],      desc:'Strong reasoning, compact.' },
-  { id:'deepseek-ai/DeepSeek-R1-Distill-Llama-8B', name:'DeepSeek R1 8B', creator:'DeepSeek', size:'~5 GB', arch:'llama', file:'model.safetensors', tok:'tokenizer.json', tags:['reasoning','thinking'], desc:'Chain-of-thought reasoning.' },
+  { id:'meta-llama/Llama-3.2-3B-Instruct',           name:'Llama 3.2 3B',    creator:'Meta',       size:'~2 GB',   arch:'llama',   file:'model.safetensors', tok:'tokenizer.json', tags:['light','fast'],       desc:'Fastest and lightest.' },
+  { id:'mistralai/Mistral-7B-Instruct-v0.3',          name:'Mistral 7B',      creator:'Mistral AI', size:'~4 GB',   arch:'mistral', file:'model.safetensors', tok:'tokenizer.json', tags:['general','balanced'],  desc:'Reliable all-rounder.' },
+  { id:'deepseek-ai/DeepSeek-R1-Distill-Llama-8B',   name:'DeepSeek R1 8B',  creator:'DeepSeek',   size:'~5 GB',   arch:'llama',   file:'model.safetensors', tok:'tokenizer.json', tags:['reasoning','strong'],  desc:'Step-by-step reasoning.' },
 ];
+
+// Target models — what will be published to CDN
+const TARGET_MODELS = [
+  {
+    id: 'llama-3.2-3b.acc',
+    name: 'Llama 3.2 3B',
+    tier: 'Light',
+    hfId: 'meta-llama/Llama-3.2-3B-Instruct',
+    arch: 'llama',
+    outputName: 'llama-3.2-3b',
+    note: 'Light tier — output: llama-3.2-3b.acc bundle for CDN',
+    tags: [['Light','green'],['LLaMA','purple'],['2 GB','blue']],
+  },
+  {
+    id: 'mistral-7b-instruct.acc',
+    name: 'Mistral 7B',
+    tier: 'Middle',
+    hfId: 'mistralai/Mistral-7B-Instruct-v0.3',
+    arch: 'mistral',
+    outputName: 'mistral-7b-instruct',
+    note: 'Middle tier — output: mistral-7b-instruct.acc bundle for CDN',
+    tags: [['Middle','amber'],['Mistral','purple'],['4 GB','blue']],
+  },
+  {
+    id: 'deepseek-r1-8b.acc',
+    name: 'DeepSeek R1 8B',
+    tier: 'Advanced',
+    hfId: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B',
+    arch: 'llama',
+    outputName: 'deepseek-r1-8b',
+    note: 'Advanced tier — output: deepseek-r1-8b.acc bundle for CDN',
+    tags: [['Advanced','purple'],['Reasoning','blue'],['5 GB','amber']],
+  },
+];
+
+let _activeTarget = null;
+
+function buildTargetGrid() {
+  document.getElementById('targetModelGrid').innerHTML = TARGET_MODELS.map(m => `
+    <div class="hf-model-card" data-targetid="${m.id}" onclick="selectTargetModel('${m.id}')">
+      <div class="hf-card-name">${m.name}</div>
+      <div class="hf-card-meta"><span>${m.tier}</span><span>·</span><span>${m.tags[2][0]}</span></div>
+      <div class="hf-card-meta" style="margin-top:.15rem">
+        ${m.tags.map(([t,c])=>`<span class="hf-card-tag ${c==='green'?'q4':c==='purple'?'acc':''}">${t}</span>`).join('')}
+      </div>
+      <div style="font-size:.62rem;color:var(--muted);margin-top:.3rem;line-height:1.5">${m.note}</div>
+    </div>
+  `).join('');
+}
+buildTargetGrid();
+
+window.selectTargetModel = function(id) {
+  _activeTarget = TARGET_MODELS.find(m => m.id === id) || null;
+  document.querySelectorAll('#targetModelGrid .hf-model-card').forEach(c =>
+    c.classList.toggle('selected', c.dataset.targetid === id));
+  if (!_activeTarget) return;
+
+  // Auto-fill HF repo + arch + output name
+  const hf = HF_MODELS.find(m => m.id === _activeTarget.hfId);
+  if (hf) {
+    selectHFModel(hf.id);
+    document.getElementById('hfRepoInput').value = hf.id;
+    document.getElementById('archOverride').value = _activeTarget.arch;
+  }
+  document.getElementById('modelName').value = _activeTarget.outputName;
+
+  // Show info banner
+  document.getElementById('targetModelInfo').style.display = 'block';
+  document.getElementById('targetModelName').textContent = _activeTarget.name;
+  document.getElementById('targetModelNote').textContent = _activeTarget.note;
+};
 
 function buildHFGrid() {
   document.getElementById('hfModelGrid').innerHTML = HF_MODELS.map(m => `
@@ -581,8 +666,7 @@ function buildHFGrid() {
       <div class="hf-card-meta"><span>${m.creator}</span><span>·</span><span>${m.size}</span></div>
       <div class="hf-card-meta" style="margin-top:.15rem">
         ${m.tags.map(t=>`<span class="hf-card-tag">${t}</span>`).join('')}
-        <span class="hf-card-tag acc">ACC-ready</span>
-        <span class="hf-card-tag q4">Q4 rec.</span>
+        <span class="hf-card-tag acc">ACC target</span>
       </div>
       <div style="font-size:.62rem;color:var(--muted);margin-top:.3rem;line-height:1.5">${m.desc}</div>
     </div>
@@ -607,30 +691,30 @@ window.onHFRepoInput = function() {
 // ── Presets ──────────────────────────────────────────────────────────────────
 const PRESETS = {
   extreme: {
-    label:'⚡ Extreme Speed', quant:'q4', shardBytes:536870912,
+    label:'Extreme Speed', quant:'q4', shardBytes:536870912,
     speedEst:'15–80 tok/s depending on device',
     accuracyNote:'Actalithic ACC-optimised Q4 · ~98% quality vs F32 · recommended for all ACC models',
-    tags:[['⚡ Fastest','green'],['Q4','purple'],['ACC-optimised','blue']],
+    tags:[['Fastest','green'],['Q4','purple'],['ACC-optimised','blue']],
     desc:'Actalithic-optimised Q4 with per-block calibration — maximum inference speed. Recommended for all ACC models.',
   },
   balanced: {
-    label:'⚖ Balanced', quant:'q8', shardBytes:268435456,
+    label:'Balanced', quant:'q8', shardBytes:268435456,
     speedEst:'8–40 tok/s depending on device',
     accuracyNote:'Q8 symmetric blocks · ~99.5% quality vs F32',
     tags:[['Balanced','amber'],['Q8','purple'],['High fidelity','blue']],
     desc:'Q8 quantization — higher fidelity at moderate speed. Best for precise numerical tasks.',
   },
   quality: {
-    label:'🎯 Max Quality', quant:'f16', shardBytes:268435456,
+    label:'Max Quality', quant:'f16', shardBytes:268435456,
     speedEst:'5–20 tok/s depending on device',
     accuracyNote:'F16 lossless · ~100% quality',
-    tags:[['Near-lossless','green'],['F16','purple'],['2× size','amber']],
+    tags:[['Near-lossless','green'],['F16','purple'],['2x size','amber']],
     desc:'F16 half-precision — near-lossless accuracy when correctness matters most.',
   },
   dev: {
-    label:'🔧 Dev / Debug', quant:'f32', shardBytes:134217728,
+    label:'Dev / Debug', quant:'f32', shardBytes:134217728,
     speedEst:'2–8 tok/s (large model)',
-    accuracyNote:'F32 full precision · 4× size vs Q4',
+    accuracyNote:'F32 full precision · 4x size vs Q4',
     tags:[['Full precision','green'],['F32','purple'],['Debug','blue']],
     desc:'F32 full precision with small 128 MB shards for easy debugging and inspection.',
   },

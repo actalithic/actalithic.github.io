@@ -1,41 +1,38 @@
 {
-  "_comment": "Edit the 'hostedBase' URL for each model to point to your own CDN or server.",
-  "_comment2": "ACC Worker will check hostedBase FIRST, then fall back to HuggingFace if null.",
-  "_comment3": "Expected directory layout on your server: <hostedBase>/manifest.json, config.json, tokenizer.json, shards/shard_00.bin ...",
-  "_comment4": "Set 'hostedBase' to null to always download from HuggingFace and convert on-device.",
+  "_comment": "Edit the 'hostedBase' URL for each model to point to your CDN (Google Drive, R2, etc.).",
+  "_comment2": "ACC Worker checks hostedBase FIRST, then falls back to on-device compilation from HuggingFace.",
+  "_comment3": "Expected layout: <hostedBase>/manifest.json, config.json, tokenizer.json, shards/shard_00.bin ...",
+  "_comment4": "Replace example.com URLs with real CDN URLs after compiling via acc-converter.html (admin tool).",
 
   "models": [
     {
-      "id": "gemma-3-4b-it.acc",
-      "name": "Gemma 3 4B",
-      "hostedBase": null,
-      "_example": "https://cdn.actalithic.com/models/gemma-3-4b-it.acc"
-    },
-    {
-      "id": "qwen2.5-7b-instruct.acc",
-      "name": "Qwen 2.5 7B",
-      "hostedBase": null,
-      "_example": "https://cdn.actalithic.com/models/qwen2.5-7b-instruct.acc"
-    },
-    {
-      "id": "phi-4-mini.acc",
-      "name": "Phi-4 Mini",
-      "hostedBase": null,
-      "_example": "https://cdn.actalithic.com/models/phi-4-mini.acc"
-    },
-    {
       "id": "llama-3.2-3b.acc",
-      "name": "Llama 3.2 3B (ACC)",
-      "hostedBase": null,
-      "_example": "https://cdn.actalithic.com/models/llama-3.2-3b.acc"
+      "name": "Llama 3.2 3B",
+      "tier": "Light",
+      "hostedBase": "https://example.com/models/llama-3.2-3b.acc",
+      "_note": "Replace with real CDN URL when hosted"
+    },
+    {
+      "id": "mistral-7b-instruct.acc",
+      "name": "Mistral 7B",
+      "tier": "Middle",
+      "hostedBase": "https://example.com/models/mistral-7b-instruct.acc",
+      "_note": "Replace with real CDN URL when hosted"
+    },
+    {
+      "id": "deepseek-r1-8b.acc",
+      "name": "DeepSeek R1 8B",
+      "tier": "Advanced",
+      "hostedBase": "https://example.com/models/deepseek-r1-8b.acc",
+      "_note": "Replace with real CDN URL when hosted"
     }
   ],
 
   "_hosting_guide": {
-    "step1": "Convert your model using the ACC Converter page to get manifest.json, config.json, tokenizer.json, and shards/ folder",
-    "step2": "Upload the entire .acc folder to your CDN/server",
-    "step3": "Set the hostedBase URL above to your CDN path (no trailing slash)",
-    "step4": "Users will now download your pre-converted .acc shards directly — no HuggingFace, no on-device conversion",
-    "step5": "This is 3-5x faster first load since .acc shards are already quantized"
+    "step1": "Open acc-converter.html (admin-only URL), pick a model, compile it to .acc format",
+    "step2": "Download the .acc bundle (manifest.json, config.json, tokenizer.json, shards/ folder)",
+    "step3": "Upload to Google Drive or R2 CDN — share publicly or use a direct-download link",
+    "step4": "Set hostedBase URL above to the CDN path (no trailing slash)",
+    "step5": "Users now download your pre-compiled .acc shards — no on-device compilation, 3-5x faster first load"
   }
 }

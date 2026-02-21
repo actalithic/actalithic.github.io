@@ -92,7 +92,7 @@ let engine = null, generating = false, history = [], activeModelId = null;
 let _useCore = false, _useCPU = false;
 let _currentChatId = null;
 const _perModelThink = {};
-let _selectedModelId = MODELS[0].id;
+let _selectedModelId = ACC_MODELS[0]?.id || MODELS[0].id;
 let _stopRequested = false;
 let _engineType = "mlc"; // "mlc" | "acc"
 
@@ -175,9 +175,9 @@ function showMobileBanner() {
 
 // ── Custom Model Picker ──────────────────────────────────
 const GROUPS = [
-  { label: "Light",    ids: ["Llama-3.2-3B-Instruct-q4f16_1-MLC", "gemma-3-4b-it.acc", "phi-4-mini.acc"] },
-  { label: "Middle",   ids: ["Mistral-7B-Instruct-v0.3-q4f16_1-MLC", "qwen2.5-7b-instruct.acc"] },
-  { label: "Advanced", ids: ["DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
+  { label: "Light",    ids: ["llama-3.2-3b.acc",      "Llama-3.2-3B-Instruct-q4f16_1-MLC"] },
+  { label: "Middle",   ids: ["mistral-7b-instruct.acc","Mistral-7B-Instruct-v0.3-q4f16_1-MLC"] },
+  { label: "Advanced", ids: ["deepseek-r1-8b.acc",    "DeepSeek-R1-Distill-Llama-8B-q4f16_1-MLC"] },
 ];
 
 function runPill(m) {
@@ -227,10 +227,10 @@ function buildPicker(cached) {
                     <span class="picker-option-size">${m.creator} · ${m.size} download · ${m.ram} RAM</span>
                     ${runPill(m)}
                     ${accBadge}
-                    ${isCached ? '<span style="color:var(--green);font-size:.55rem"><span class="material-icons-round" style="font-size:10px;vertical-align:middle">check_circle</span> cached</span>' : isACC ? '<span style="color:var(--purple);font-size:.55rem">⬇ downloads from HuggingFace</span>' : ''}
+                    ${isCached ? '<span style="color:var(--green);font-size:.55rem"><span class="material-icons-round" style="font-size:10px;vertical-align:middle">check_circle</span> cached</span>' : isACC ? '<span style="color:var(--purple);font-size:.55rem"><span class="material-icons-round" style="font-size:10px;vertical-align:middle">download</span> download & compile on first run</span>' : ''}
                     ${mobileWarn}
                   </div>
-                  ${(m.id.toLowerCase().includes('deepseek') || m.id.toLowerCase().includes('r1'))
+                  ${(m.id.toLowerCase().includes('deepseek') || m.id.toLowerCase().includes('r1') || m.id.includes('deepseek-r1'))
                     ? `<div class="picker-think-row" onclick="event.stopPropagation()">
                         <span class="picker-think-label"><span class="material-icons-round" style="font-size:11px;vertical-align:middle">psychology</span> Thinking</span>
                         <label class="picker-think-toggle">
@@ -369,7 +369,7 @@ function buildSystemPrompt(modelId, memories = []) {
   const full    = m ? m.fullName : "a local language model";
   const short   = m ? m.name     : "this model";
   const mobileTip = IS_MOBILE ? "\nBe concise — the user is on a mobile device." : "";
-  const modelSupportsThink = modelId.toLowerCase().includes("deepseek") || modelId.toLowerCase().includes("r1");
+  const modelSupportsThink = modelId.toLowerCase().includes("deepseek") || modelId.toLowerCase().includes("r1") || modelId.includes("deepseek-r1");
   const thinkActive = modelSupportsThink && getModelThink(modelId);
 
   const thinkInstructions = thinkActive ? `
@@ -508,7 +508,7 @@ export async function loadModel() {
         if (ps) {
           const phase = msg.phase || "";
           if (phase === "download") ps.textContent = msg.msg.includes("MB") ? `Downloading… ${msg.msg.match(/[\d.]+\s*MB/)?.[0] || ""}` : "Downloading model…";
-          else if (phase === "convert") ps.textContent = "Converting to .acc…";
+          else if (phase === "convert" || phase === "compile") ps.textContent = "Compiling to .acc…";
           else if (phase === "cache")   ps.textContent = "Saving to cache…";
           else if (phase === "gpu")     ps.textContent = pct < 95 ? "Uploading to GPU…" : "Compiling shaders…";
           else if (phase === "done")    ps.textContent = "Ready";
@@ -586,15 +586,21 @@ export async function loadModel() {
   } catch (err) {
     if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round">download</span> Download &amp; Load'; }
     if (msw) { msw.style.opacity = "1"; msw.style.pointerEvents = ""; }
+    if (progWrap) progWrap.style.display = "none";
     const msg2 = (err.message || "").toLowerCase();
     if (sub) {
-      if (msg2.includes("webgpu") || !navigator.gpu) {
-        sub.innerHTML = `<strong style="color:var(--red)">WebGPU not supported.</strong><br>Try the CPU fallback toggle, or switch to Chrome/Chromium.`;
+      const isMobileUA = /Android|iPhone|iPad/i.test(navigator.userAgent);
+      if (!navigator.gpu) {
+        sub.innerHTML = `<strong style="color:var(--red)">WebGPU not supported.</strong><br>${isMobileUA ? "On Android, use Chrome 121+ and make sure <code>chrome://flags/#enable-unsafe-webgpu</code> is enabled." : "Try Chrome 113+ on desktop, or use the CPU fallback toggle."}`;
+      } else if (isMobileUA || msg2.includes("invalid") || msg2.includes("validation") || msg2.includes("device lost") || msg2.includes("mobile")) {
+        sub.innerHTML = `<strong style="color:var(--amber)">GPU error on mobile.</strong><br>Your device may have limited WebGPU support. Try the <strong>Llama 3.2 3B</strong> model (lightest) or enable CPU fallback. On Android, Chrome 121+ is required.`;
+      } else if (msg2.includes("webgpu") || msg2.includes("adapter")) {
+        sub.innerHTML = `<strong style="color:var(--red)">WebGPU error.</strong><br>${err.message}`;
       } else {
         sub.innerHTML = `<span style="color:var(--red)">Error: ${err.message || "Unknown error"}</span>`;
       }
     }
-    console.error(err);
+    console.error("[LocalLLM] Load error:", err);
   }
 }
 
@@ -608,7 +614,7 @@ function addWelcome(model, useCore, useCPU) {
   const col  = document.createElement("div"); col.className  = "msg-col";
   const sndr = document.createElement("div"); sndr.className = "msg-sender"; sndr.textContent = "LocalLLM";
   const bbl  = document.createElement("div"); bbl.className  = "bubble";
-  let note = useCore ? " Running with ActalithicCore — hybrid GPU+CPU for fast processing. Expect ~15–20 tok/s on Llama 3B, ~7–12 tok/s on Mistral 7B, ~5 tok/s on DeepSeek 8B." : useCPU ? " Running in CPU/WASM mode — responses will be slower." : "";
+  let note = useCore ? " Running with ActalithicCore — hybrid GPU+CPU for fast processing. Expect ~15–20 tok/s on Llama 3B, ~7–12 tok/s on Mistral 7B, ~5 tok/s on DeepSeek R1 8B." : useCPU ? " Running in CPU/WASM mode — responses will be slower." : "";
   let mobileNote = IS_MOBILE ? " I'll keep answers short to stay fast on your phone. You can tap ■ Stop at any time." : "";
   bbl.textContent = model
     ? `Hello. I am LocalLLM, an AI assistant by Actalithic, powered by ${model.fullName}.${note}${mobileNote} How can I assist you?`
