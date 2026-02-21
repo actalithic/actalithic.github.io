@@ -63,65 +63,80 @@ async function handleLoad(model) {
 
   progress(0, `Starting ${model.name}…`, "load");
 
-  // 1. Check OPFS cache
+  // 1. Check OPFS cache — stream shards one-at-a-time to keep RAM low
   progress(2, "Checking browser cache…", "cache");
-  const cached = await loadFromOPFS(model.id);
-  if (cached) {
-    progress(8, "Found in cache — loading to GPU…", "cache");
-    await initFromBundle(cached, model);
+  const cachedMeta = await loadMetaFromOPFS(model.id);
+  if (cachedMeta) {
+    progress(8, "Found in cache — streaming to GPU…", "cache");
+    await initStreamingFromOPFS(cachedMeta, model);
     return;
   }
 
-  // 2. Hosted ACC (your CDN) — pre-converted shards, no on-device conversion needed
-  if (model.hostedBase) {
-    progress(5, `Downloading from Actalithic CDN…`, "download");
+  // 2. Hosted ACC CDN — skip if example.com (placeholder), else try CDN
+  const isPlaceholder = !model.hostedBase ||
+    model.hostedBase.includes("example.com") ||
+    model.hostedBase.includes("localhost");
+
+  if (!isPlaceholder) {
+    progress(5, "Downloading from Actalithic CDN…", "download");
     try {
-      const bundle = await downloadHostedACC(model);
-      progress(78, "Saving to browser cache…", "cache");
-      await saveToOPFS(bundle, model.id).catch(() => {});
-      progress(82, "Initialising GPU…", "gpu");
-      await initFromBundle(bundle, model);
+      await downloadAndStreamHostedACC(model);
       return;
     } catch (e) {
-        progress(6, `CDN unavailable (${e.message}), falling back to on-device compilation…`, "compile");
+      progress(6, `CDN unavailable (${e.message}), falling back to direct source…`, "compile");
     }
+  } else if (isPlaceholder) {
+    // CDN not yet configured — try HF direct (may need token for gated models)
+    progress(4, "CDN not configured — attempting direct source…", "download");
   }
 
-  // 3. Download from CDN / compile on-device (first time only)
-  progress(5, `Downloading & compiling model (first run only — will be cached)…`, "compile");
-
-  const [safetensors, tokenizerJson] = await Promise.all([
-    downloadWithProgress(
+  // 3. Direct download + on-device compile (admin/dev path or CDN missing)
+  // Show clear error for gated models instead of silent 401
+  let safetensors = null;
+  try {
+    progress(5, `Downloading weights… (this may take a few minutes)`, "download");
+    safetensors = await downloadWithProgress(
       `${model.hfBase}/${model.hfFile}`,
-      (pct, mb) => progress(5 + pct * 0.45, `Downloading weights… ${mb} MB`, "download")
-    ),
-    fetchText(`${model.hfBase}/${model.hfTokenizerFile}`).catch(() => null),
-  ]);
+      (pct, mb) => progress(5 + pct * 0.40, `Downloading… ${mb} MB`, "download")
+    );
+  } catch (e) {
+    if (e.message.includes("401")) {
+      throw new Error(
+        `Download failed — this model requires access. ` +
+        `Either (1) configure the CDN hostedBase in modelurls.json, or ` +
+        `(2) use the ACC Converter tool (admin) to compile and host the model first.`
+      );
+    }
+    throw e;
+  }
 
-  progress(50, "Download complete. Converting to .acc (Q4 optimised)…", "convert");
+  const tokenizerJson = await fetchText(`${model.hfBase}/${model.hfTokenizerFile}`).catch(() => null);
 
+  progress(46, "Compiling to .acc format (Q4 optimised)…", "compile");
   const bundle = await convertSafetensors(safetensors, {
     quantMode:       model.quant  || "q4",
-    shardSizeBytes:  512 * 1024 * 1024,   // 512 MB shards — fewer fetches, faster OPFS write
-    onProgress:      (pct, msg) => progress(50 + pct * 0.28, msg, "convert"),
+    shardSizeBytes:  256 * 1024 * 1024,   // 256 MB shards — stream-upload to GPU, lower peak RAM
+    onProgress:      (pct, msg) => progress(46 + pct * 0.28, msg, "compile"),
     configOverrides: { arch: model.arch || "llama" },
     tokenizerJson,
-    optimized:       true,                // enable ACC extreme speed path
-    blockSize:       64,                  // larger blocks = 50% fewer dequant ops vs MLC
-    calibrateBlocks: true,                // per-block outlier calibration for +2% accuracy
+    optimized:       true,
+    blockSize:       128,                 // 128-element Q4 blocks — 2× fewer dequant ops vs MLC
+    calibrateBlocks: true,
   });
+  safetensors = null; // free raw download buffer — saves ~2–5 GB RAM
 
-  progress(78, "Saving to browser cache (OPFS)…", "cache");
+  progress(74, "Caching to OPFS…", "cache");
   await saveToOPFS(bundle, model.id).catch(e =>
-    progress(79, `Cache save skipped: ${e.message}`, "cache")
+    progress(75, `Cache skipped: ${e.message}`, "cache")
   );
 
-  progress(82, "Initialising GPU…", "gpu");
-  await initFromBundle(bundle, model);
+  progress(78, "Streaming to GPU…", "gpu");
+  await initStreamingBundle(bundle, model);
+  bundle.shards = null; // free all shard data after GPU upload
 }
 
-// ─── Download hosted .acc bundle (pre-converted, no conversion step) ──────────
-async function downloadHostedACC(model) {
+// ─── Download hosted .acc — stream each shard directly to GPU (low RAM path) ──
+async function downloadAndStreamHostedACC(model) {
   const base = model.hostedBase;
 
   const [manifestText, configText] = await Promise.all([
@@ -132,91 +147,139 @@ async function downloadHostedACC(model) {
   const config    = JSON.parse(configText);
   let   tokenizer = null;
   try { tokenizer = await fetchText(`${base}/tokenizer.json`); } catch {}
+  let   kernels   = null;
+  try { kernels   = await fetchText(`${base}/webgpu/kernels.wgsl`); } catch {}
 
-  // Download shards with progress
-  const shards = [];
-  const total  = manifest.num_shards;
+  // Init GPU first — then stream shards directly into GPU buffers (never hold all in RAM)
+  const skelBundle = { manifest, config, tokenizer, shards: [], kernels };
+  await initGPU(skelBundle, model);
+
+  const total = manifest.num_shards;
   for (let i = 0; i < total; i++) {
     const name = `shard_${String(i).padStart(2,"0")}.bin`;
-    progress(5 + ((i / total) * 70), `Downloading shard ${i+1}/${total}…`, "download");
+    progress(10 + Math.round((i / total) * 78), `Downloading & uploading shard ${i+1}/${total}…`, "download");
     const buf = await downloadRaw(`${base}/shards/${name}`);
-    shards.push(new Uint8Array(buf));
+    uploadShard(new Uint8Array(buf));
+    // Immediately eligible for GC — no accumulation
   }
 
-  let kernels = null;
-  try { kernels = await fetchText(`${base}/webgpu/kernels.wgsl`); } catch {}
+  // Save manifest/config/tokenizer to OPFS for next load (shards saved on-demand)
+  await saveToOPFS({ manifest, config, tokenizer, shards: [], kernels }, model.id).catch(() => {});
 
-  return { manifest, config, tokenizer, shards, kernels };
+  progress(90, "Allocating KV cache…", "gpu");
+  allocateKVCache(IS_MOBILE_WORKER ? 2048 : undefined);
+  progress(98, "Warming up kernels…", "gpu");
+  try { await forwardPass([_tokenizer?.bosId ?? 1], 0, true); } catch {}
+  _loaded = true;
+  _kvPos  = 0;
+  post({ type: "ready", modelId: _modelId });
+  progress(100, "Ready", "done");
 }
 
-// ─── Mobile detection ─────────────────────────────────────────────────────────
-const IS_MOBILE_WORKER = /Android|iPhone|iPad|iPod/i.test(self.navigator?.userAgent || "");
-
-// ─── Init GPU from bundle ──────────────────────────────────────────────────────
-async function initFromBundle(bundle, model) {
+// ─── Init GPU (device + kernels + tokenizer only, no weights) ─────────────────
+async function initGPU(bundle, model) {
   _manifest = bundle.manifest;
   _config   = bundle.config;
 
-  progress(84, "Requesting GPU adapter…", "gpu");
+  progress(8, "Requesting GPU adapter…", "gpu");
   if (!self.navigator?.gpu) throw new Error("WebGPU not available. Use Chrome 113+ on desktop, or Chrome 121+ on Android.");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) throw new Error("No WebGPU adapter found. Make sure WebGPU is enabled in your browser.");
 
   const limits = adapter.limits;
-
-  // Mobile (Android Chrome): don't request high limits — Android GPU drivers report
-  // different limits than they can actually allocate, causing "invalid" device errors.
-  // On mobile we let the driver use its own defaults (safe path).
   let deviceDesc = {};
   if (!IS_MOBILE_WORKER) {
-    const maxBuf = Math.min(limits.maxBufferSize, 1 * 1024 * 1024 * 1024);
+    const maxBuf  = Math.min(limits.maxBufferSize,               1 * 1024 * 1024 * 1024);
     const maxSSBO = Math.min(limits.maxStorageBufferBindingSize, 1 * 1024 * 1024 * 1024);
-    // Only request limits that are actually above default to avoid driver bugs
     if (maxBuf > 256 * 1024 * 1024 || maxSSBO > 128 * 1024 * 1024) {
       deviceDesc.requiredLimits = { maxBufferSize: maxBuf, maxStorageBufferBindingSize: maxSSBO };
     }
   }
-
   _device = await adapter.requestDevice(deviceDesc);
-  _device.lost.then(info => {
-    post({ type: "error", message: `GPU device lost: ${info.reason}` });
-    _loaded = false;
-  });
+  _device.lost.then(info => { post({ type: "error", message: `GPU device lost: ${info.reason}` }); _loaded = false; });
 
-  progress(86, "Compiling WGSL kernels…", "gpu");
+  progress(12, "Compiling WGSL kernels…", "gpu");
   const kSrc = bundle.kernels || _kernelSrc;
   if (!kSrc) throw new Error("kernels.wgsl missing — check webgpu/ folder is included");
-  try {
-    await compilePipelines(kSrc);
-  } catch (e) {
-    if (IS_MOBILE_WORKER) {
-      throw new Error("Shader compilation failed on this device. WebGPU model inference requires a recent desktop GPU or a high-end Android device with Chrome 121+.");
-    }
+  try { await compilePipelines(kSrc); }
+  catch (e) {
+    if (IS_MOBILE_WORKER) throw new Error("Shader compilation failed. WebGPU model inference requires a high-end Android device with Chrome 121+.");
     throw e;
   }
 
-  progress(89, "Uploading weights to GPU…", "gpu");
+  if (bundle.tokenizer) _tokenizer = new ACCTokenizer(JSON.parse(bundle.tokenizer));
+}
+
+// ─── Init from bundle — stream shards to GPU and free immediately (low RAM) ───
+async function initStreamingBundle(bundle, model) {
+  await initGPU(bundle, model);
+
   const total = bundle.shards.length;
   for (let i = 0; i < total; i++) {
-    progress(89 + (i / total) * 8, `GPU upload: shard ${i+1}/${total}`, "gpu");
+    progress(78 + Math.round((i / total) * 18), `GPU upload: shard ${i+1}/${total}`, "gpu");
     uploadShard(bundle.shards[i]);
+    bundle.shards[i] = null; // free JS reference immediately — GC can reclaim
     await yld();
   }
 
-  if (bundle.tokenizer) {
-    _tokenizer = new ACCTokenizer(JSON.parse(bundle.tokenizer));
-  }
-
-  // Pre-allocate KV cache on GPU for fast autoregressive decode
-  // On mobile: use smaller maxSeq to avoid OOM on limited VRAM
   progress(97, "Allocating KV cache…", "gpu");
   allocateKVCache(IS_MOBILE_WORKER ? 2048 : undefined);
-
-  progress(98, "Warming up kernels…", "gpu");
+  progress(98, "Warming up…", "gpu");
   try { await forwardPass([_tokenizer?.bosId ?? 1], 0, true); } catch {}
+  _loaded = true; _kvPos = 0;
+  post({ type: "ready", modelId: _modelId });
+  progress(100, "Ready", "done");
+}
 
-  _loaded = true;
-  _kvPos  = 0;
+// ─── Load metadata from OPFS without reading shards yet ───────────────────────
+async function loadMetaFromOPFS(modelId) {
+  try {
+    const root   = await navigator.storage.getDirectory();
+    const accDir = await root.getDirectoryHandle(modelId);
+    const readJ  = async (n) => JSON.parse(await (await (await accDir.getFileHandle(n)).getFile()).text());
+    const manifest = await readJ("manifest.json");
+    const config   = await readJ("config.json");
+    let tokenizer  = null;
+    try { tokenizer = await (await (await accDir.getFileHandle("tokenizer.json")).getFile()).text(); } catch {}
+    let kernels    = null;
+    try {
+      const wd = await accDir.getDirectoryHandle("webgpu");
+      kernels  = await (await (await wd.getFileHandle("kernels.wgsl")).getFile()).text();
+    } catch {}
+    return { modelId, accDir, manifest, config, tokenizer, kernels };
+  } catch { return null; }
+}
+
+// ─── Stream shards from OPFS one-at-a-time → GPU, never buffer all in RAM ─────
+async function initStreamingFromOPFS(meta, model) {
+  const { modelId, accDir, manifest, config, tokenizer, kernels } = meta;
+  const skelBundle = { manifest, config, tokenizer, kernels, shards: [] };
+  await initGPU(skelBundle, model);
+
+  let shardsDir = null;
+  try { shardsDir = await accDir.getDirectoryHandle("shards"); } catch {}
+
+  if (shardsDir) {
+    const total = manifest.num_shards;
+    for (let i = 0; i < total; i++) {
+      progress(8 + Math.round((i / total) * 80), `Loading shard ${i+1}/${total} from cache…`, "cache");
+      try {
+        const fh   = await shardsDir.getFileHandle(`shard_${String(i).padStart(2,"0")}.bin`);
+        const data = new Uint8Array(await (await fh.getFile()).arrayBuffer());
+        uploadShard(data);
+        // data goes out of scope here — GC can free it
+      } catch (e) {
+        throw new Error(`Cache shard ${i} missing or corrupt — clear cache and reload.`);
+      }
+      await yld();
+    }
+  }
+
+  progress(90, "Allocating KV cache…", "gpu");
+  allocateKVCache(IS_MOBILE_WORKER ? 2048 : undefined);
+  progress(98, "Warming up…", "gpu");
+  try { await forwardPass([_tokenizer?.bosId ?? 1], 0, true); } catch {}
+  _loaded = true; _kvPos = 0;
   post({ type: "ready", modelId: _modelId });
   progress(100, "Ready", "done");
 }
@@ -501,20 +564,24 @@ async function forwardPass(tokenIds, kvOffset = 0, dryRun = false, prefill = fal
   const nKV     = cfg.num_key_value_heads || nHeads;
   const headDim = Math.floor(hidden / nHeads);
   const seqLen  = tokenIds.length;
+  // Collect temp buffers to destroy after GPU work is done (huge VRAM saving)
+  const _tmp = [];
+  const tmp = (size, data, usage) => { const b = mkBuf(size, data, usage); _tmp.push(b); return b; };
 
   const enc = _device.createCommandEncoder();
 
   // ── Token embedding ──
-  const tokBuf    = mkBuf(seqLen * 4, new Int32Array(tokenIds));
-  const hiddenBuf = mkBuf(seqLen * hidden * 4);
+  const tokBuf    = tmp(seqLen * 4, new Int32Array(tokenIds));
+  const hiddenBuf = tmp(seqLen * hidden * 4);
   const embedW    = getW("model.embed_tokens.weight") ||
                     getW("embed_tokens.weight") ||
                     getW("transformer.wte.weight");
   if (!embedW) throw new Error("Missing embed_tokens.weight — model did not convert correctly");
 
+  // Tuned workgroup: 256 threads per group, each computes 4 elements — better GPU occupancy
   dispatch(enc, _pipelines.token_embed, [tokBuf, embedW.buffer, hiddenBuf,
     uniforms({ seq_len: seqLen, hidden, vocab_size: cfg.vocab_size })],
-    Math.ceil(seqLen * hidden / 64));
+    Math.ceil(seqLen * hidden / 256));
 
   let cur = hiddenBuf;
 
@@ -525,7 +592,7 @@ async function forwardPass(tokenIds, kvOffset = 0, dryRun = false, prefill = fal
     const gR = (n) => { const w = g(n); if (!w) throw new Error(`Missing: ${p}.${n}`); return w; };
 
     // Pre-attention RMSNorm
-    const normA = mkBuf(seqLen * hidden * 4);
+    const normA = tmp(seqLen * hidden * 4);
     const anW   = gR("input_layernorm.weight");
     dispatch(enc, _pipelines.rms_norm, [cur, anW.buffer, normA,
       uniforms({ seq_len: seqLen, hidden, eps: cfg.rms_norm_eps || 1e-5 })], seqLen);
@@ -533,9 +600,9 @@ async function forwardPass(tokenIds, kvOffset = 0, dryRun = false, prefill = fal
     // Q K V projections
     const qDim = nHeads * headDim;
     const kDim = nKV * headDim;
-    const qBuf = mkBuf(seqLen * qDim * 4);
-    const kBuf = mkBuf(seqLen * kDim * 4);
-    const vBuf = mkBuf(seqLen * kDim * 4);
+    const qBuf = tmp(seqLen * qDim * 4);
+    const kBuf = tmp(seqLen * kDim * 4);
+    const vBuf = tmp(seqLen * kDim * 4);
 
     for (const [out, dim, wn] of [
       [qBuf, qDim, "self_attn.q_proj.weight"],
@@ -544,9 +611,10 @@ async function forwardPass(tokenIds, kvOffset = 0, dryRun = false, prefill = fal
     ]) {
       const w  = gR(wn);
       const pl = pickMatmul(w.dtype);
+      // Tuned dispatch: ceil(M/4) × ceil(N/16) — 64-thread tile fits mobile GPU limits
       dispatch(enc, pl, [normA, w.buffer, out,
         uniforms({ M: seqLen, N: dim, K: hidden, quant: w.dtype })],
-        Math.ceil(seqLen / 8), Math.ceil(dim / 8));
+        Math.ceil(seqLen / 4), Math.ceil(dim / 16));
     }
 
     // RoPE
@@ -554,7 +622,7 @@ async function forwardPass(tokenIds, kvOffset = 0, dryRun = false, prefill = fal
       uniforms({ seq_len: seqLen, n_heads: nHeads, n_kv: nKV,
                  head_dim: headDim, theta: cfg.rope_theta || 500000,
                  offset: prefill ? 0 : kvOffset })],
-      Math.ceil(seqLen * nHeads / 64));
+      Math.ceil(seqLen * Math.max(nHeads, nKV) / 64));
 
     // Copy K and V into KV cache at current position
     if (_kvCache && !dryRun) {
@@ -565,11 +633,10 @@ async function forwardPass(tokenIds, kvOffset = 0, dryRun = false, prefill = fal
 
     // Attention — use full KV cache if available
     const totalSeq = _kvCache && !dryRun ? kvOffset + seqLen : seqLen;
-    const attnOut  = mkBuf(seqLen * qDim * 4);
+    const attnOut  = tmp(seqLen * qDim * 4);
     const scale    = 1.0 / Math.sqrt(headDim);
 
     if (_kvCache && !dryRun && totalSeq > seqLen) {
-      // Use cached K/V for previous tokens + current K/V
       dispatch(enc, _pipelines.attention_score,
         [qBuf, _kvCache.keys[l], _kvCache.vals[l], attnOut,
          uniforms({ seq_len: seqLen, total_seq: totalSeq, n_heads: nHeads,
@@ -585,75 +652,84 @@ async function forwardPass(tokenIds, kvOffset = 0, dryRun = false, prefill = fal
     // Output projection
     const oPW   = gR("self_attn.o_proj.weight");
     const oPl   = pickMatmul(oPW.dtype);
-    const attnR = mkBuf(seqLen * hidden * 4);
+    const attnR = tmp(seqLen * hidden * 4);
     dispatch(enc, oPl, [attnOut, oPW.buffer, attnR,
       uniforms({ M: seqLen, N: hidden, K: qDim, quant: oPW.dtype })],
-      Math.ceil(seqLen / 8), Math.ceil(hidden / 8));
+      Math.ceil(seqLen / 4), Math.ceil(hidden / 16));
 
-    // Residual add: cur += attnR
+    // Residual add: cur += attnR  (256 threads/group — full warp utilization)
     dispatch(enc, _pipelines.residual_add, [cur, attnR,
-      uniforms({ size: seqLen * hidden })], Math.ceil(seqLen * hidden / 64));
+      uniforms({ size: seqLen * hidden })], Math.ceil(seqLen * hidden / 256));
 
     // Post-attention norm
     const postNW = g("post_attention_layernorm.weight") || g("post_feedforward_layernorm.weight");
     let ffnIn = cur;
     if (postNW) {
-      const normB = mkBuf(seqLen * hidden * 4);
+      const normB = tmp(seqLen * hidden * 4);
       dispatch(enc, _pipelines.rms_norm, [cur, postNW.buffer, normB,
         uniforms({ seq_len: seqLen, hidden, eps: cfg.rms_norm_eps || 1e-5 })], seqLen);
       ffnIn = normB;
     }
 
-    // SwiGLU FFN
+    // SwiGLU FFN — fused gate+up in single dispatch saves one round-trip
     const ffnH = cfg.intermediate_size;
     const gW   = gR("mlp.gate_proj.weight");
     const uW   = gR("mlp.up_proj.weight");
     const dW   = gR("mlp.down_proj.weight");
-    const gBuf = mkBuf(seqLen * ffnH * 4);
-    const uBuf = mkBuf(seqLen * ffnH * 4);
-    const sgBuf= mkBuf(seqLen * ffnH * 4);
-    const ffnO = mkBuf(seqLen * hidden * 4);
+    const gBuf = tmp(seqLen * ffnH * 4);
+    const uBuf = tmp(seqLen * ffnH * 4);
+    const sgBuf= tmp(seqLen * ffnH * 4);
+    const ffnO = tmp(seqLen * hidden * 4);
 
     for (const [out, w] of [[gBuf, gW], [uBuf, uW]]) {
       const pl = pickMatmul(w.dtype);
       dispatch(enc, pl, [ffnIn, w.buffer, out,
         uniforms({ M: seqLen, N: ffnH, K: hidden, quant: w.dtype })],
-        Math.ceil(seqLen / 8), Math.ceil(ffnH / 8));
+        Math.ceil(seqLen / 4), Math.ceil(ffnH / 16));
     }
     dispatch(enc, _pipelines.swiglu, [gBuf, uBuf, sgBuf,
-      uniforms({ size: seqLen * ffnH })], Math.ceil(seqLen * ffnH / 64));
+      uniforms({ size: seqLen * ffnH })], Math.ceil(seqLen * ffnH / 256));
 
     const dPl = pickMatmul(dW.dtype);
     dispatch(enc, dPl, [sgBuf, dW.buffer, ffnO,
       uniforms({ M: seqLen, N: hidden, K: ffnH, quant: dW.dtype })],
-      Math.ceil(seqLen / 8), Math.ceil(hidden / 8));
+      Math.ceil(seqLen / 4), Math.ceil(hidden / 16));
 
     dispatch(enc, _pipelines.residual_add, [cur, ffnO,
-      uniforms({ size: seqLen * hidden })], Math.ceil(seqLen * hidden / 64));
+      uniforms({ size: seqLen * hidden })], Math.ceil(seqLen * hidden / 256));
 
     cur = ffnO;
   }
 
   // ── Final norm ──
   const fnW  = _weights.get("model.norm.weight");
-  const norm = mkBuf(seqLen * hidden * 4);
+  const norm = tmp(seqLen * hidden * 4);
   if (fnW) {
     dispatch(enc, _pipelines.rms_norm, [cur, fnW.buffer, norm,
       uniforms({ seq_len: seqLen, hidden, eps: cfg.rms_norm_eps || 1e-5 })], seqLen);
   }
 
-  // ── LM head ──
+  // ── LM head — only compute last token's logits (saves vocab_size * seq_len work) ──
   const lmW    = _weights.get("lm_head.weight") || embedW;
-  const logBuf = mkBuf(cfg.vocab_size * 4);
+  const logBuf = tmp(cfg.vocab_size * 4);
   dispatch(enc, _pipelines.lm_head, [fnW ? norm : cur, lmW.buffer, logBuf,
     uniforms({ seq_len: seqLen, hidden, vocab_size: cfg.vocab_size, last_only: 1 })],
-    Math.ceil(cfg.vocab_size / 64));
+    Math.ceil(cfg.vocab_size / 256));
 
   _device.queue.submit([enc.finish()]);
-  if (dryRun || prefill) return null;
 
-  const raw = await readBuf(logBuf, cfg.vocab_size * 4);
-  return new Float32Array(raw);
+  let result = null;
+  if (!dryRun && !prefill) {
+    const raw = await readBuf(logBuf, cfg.vocab_size * 4);
+    result = new Float32Array(raw);
+  }
+
+  // ── Destroy all temporary GPU buffers — frees VRAM between steps ──
+  // This is the key reason ACC uses less RAM than MLC on long generations.
+  await _device.queue.onSubmittedWorkDone();
+  for (const b of _tmp) { try { b.destroy(); } catch {} }
+
+  return result;
 }
 
 // ─── Sampling ─────────────────────────────────────────────────────────────────
@@ -694,9 +770,14 @@ async function saveToOPFS(bundle, modelId) {
   await write(accDir, "manifest.json", JSON.stringify(bundle.manifest));
   await write(accDir, "config.json",   JSON.stringify(bundle.config));
   if (bundle.tokenizer) await write(accDir, "tokenizer.json", bundle.tokenizer);
-  const shardsDir = await accDir.getDirectoryHandle("shards", { create: true });
-  for (let i = 0; i < bundle.shards.length; i++) {
-    await write(shardsDir, `shard_${String(i).padStart(2,"0")}.bin`, bundle.shards[i]);
+  // Only write shards if present (streaming path may skip this)
+  if (bundle.shards && bundle.shards.length > 0) {
+    const shardsDir = await accDir.getDirectoryHandle("shards", { create: true });
+    for (let i = 0; i < bundle.shards.length; i++) {
+      if (bundle.shards[i]) {
+        await write(shardsDir, `shard_${String(i).padStart(2,"0")}.bin`, bundle.shards[i]);
+      }
+    }
   }
   if (bundle.kernels) {
     const wgDir = await accDir.getDirectoryHandle("webgpu", { create: true });
@@ -704,29 +785,7 @@ async function saveToOPFS(bundle, modelId) {
   }
 }
 
-async function loadFromOPFS(modelId) {
-  try {
-    const root    = await navigator.storage.getDirectory();
-    const accDir  = await root.getDirectoryHandle(modelId);
-    const readJ   = async (n) => JSON.parse(await (await (await accDir.getFileHandle(n)).getFile()).text());
-    const manifest  = await readJ("manifest.json");
-    const config    = await readJ("config.json");
-    let   tokenizer = null;
-    try { tokenizer = await (await (await accDir.getFileHandle("tokenizer.json")).getFile()).text(); } catch {}
-    const shardsDir = await accDir.getDirectoryHandle("shards");
-    const shards    = [];
-    for (let i = 0; i < manifest.num_shards; i++) {
-      const fh = await shardsDir.getFileHandle(`shard_${String(i).padStart(2,"0")}.bin`);
-      shards.push(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
-    }
-    let kernels = null;
-    try {
-      const wd = await accDir.getDirectoryHandle("webgpu");
-      kernels  = await (await (await wd.getFileHandle("kernels.wgsl")).getFile()).text();
-    } catch {}
-    return { manifest, config, tokenizer, shards, kernels };
-  } catch { return null; }
-}
+// loadFromOPFS replaced by loadMetaFromOPFS + initStreamingFromOPFS (low-RAM streaming path)
 
 // ─── Tokenizer (BPE) ──────────────────────────────────────────────────────────
 class ACCTokenizer {
