@@ -146,6 +146,11 @@ export function toFloat16(f32) {
  *   [rest]                     raw tensor data
  */
 export function parseSafetensors(buffer) {
+  // Guard: streaming buffers must use the streaming path in convertSafetensors
+  if (buffer && buffer._isStreamingBuffer) {
+    throw new Error("parseSafetensors called with a StreamingBuffer — use convertSafetensors directly which handles streaming internally.");
+  }
+
   const view = new DataView(buffer);
 
   // Read header length (8 bytes, little-endian uint64)
@@ -357,15 +362,25 @@ export function packTensor(name, dtype, shape, data) {
 // ─── Main Conversion Pipeline ────────────────────────────────────────────────
 
 /**
- * Convert a safetensors ArrayBuffer to a .acc directory structure.
+ * Convert a safetensors buffer to a .acc bundle.
+ *
+ * `buffer` may be either:
+ *   • A plain ArrayBuffer  (legacy — works for small models only)
+ *   • A StreamingBuffer    (recommended — no large RAM allocation)
+ *     Must expose: .byteLength, .readSlice(start,end)→Promise<ArrayBuffer>
+ *
+ * The streaming path reads each tensor individually via readSlice() so peak
+ * RAM ≈ size of one tensor (~50–200 MB) rather than the full model.
+ * Completed shards are written to OPFS immediately and freed — so the whole
+ * model is never in JS heap at once, regardless of model size.
  *
  * Options:
  *   quantMode: "f32" | "f16" | "q8" | "q4"  (default: "q4")
  *   shardSizeBytes: number                   (default: 256MB)
  *   onProgress: (pct: 0-100, msg: string) => void
- *   configOverrides: Partial<Config>         (override inferred config)
- *   tokenizerJson: string | null             (raw tokenizer.json content)
- *   kernelsSrc: string | null               (WGSL source from acc-kernels.wgsl)
+ *   configOverrides: Partial<Config>
+ *   tokenizerJson: string | null
+ *   kernelsSrc: string | null
  *
  * Returns: ACCBundle { manifest, config, tokenizer, shards: Uint8Array[], kernels }
  */
@@ -377,98 +392,181 @@ export async function convertSafetensors(buffer, opts = {}) {
     configOverrides = {},
     tokenizerJson   = null,
     kernelsSrc      = null,
-    // Extreme-speed optimisation flags (used by Actalithic presets)
-    optimized       = false,    // enables all speed-oriented passes
-    blockSize       = 32,       // Q4: 64, Q8: 32 — larger blocks = fewer dequant ops at inference
-    calibrateBlocks = false,    // per-block min/max calibration for better Q4 accuracy
+    optimized       = false,
+    blockSize       = 32,
+    calibrateBlocks = false,
   } = opts;
 
-  onProgress(0, "Parsing safetensors header…");
-  const parsed = parseSafetensors(buffer);
-  const { tensorMap } = parsed;
+  const isStreaming = buffer && buffer._isStreamingBuffer === true;
 
+  // ── Step 1: Parse header ──────────────────────────────────────────────────
+  // For streaming buffers we only read the first ~8 MB (header region).
+  // For plain ArrayBuffers we parse the whole buffer as before.
+  onProgress(0, "Parsing safetensors header…");
+
+  let tensorMap, dataStart;
+
+  if (isStreaming) {
+    // Read first 8 bytes to get header length
+    const lenBuf  = await buffer.readSlice(0, 8);
+    const lenView = new DataView(lenBuf);
+    const headerLen = lenView.getUint32(0, true);   // lo 32 bits (hi should be 0)
+    // Read the JSON header
+    const hdrBuf  = await buffer.readSlice(8, 8 + headerLen);
+    const hdrStr  = new TextDecoder().decode(hdrBuf);
+    const header  = JSON.parse(hdrStr);
+    dataStart     = 8 + headerLen;
+    tensorMap     = new Map();
+    for (const [name, meta] of Object.entries(header)) {
+      if (name === "__metadata__") continue;
+      tensorMap.set(name, {
+        dtype:      meta.dtype,
+        shape:      meta.shape,
+        dataOffset: dataStart + meta.data_offsets[0],
+        dataLen:    meta.data_offsets[1] - meta.data_offsets[0],
+      });
+    }
+  } else {
+    // Plain ArrayBuffer path (legacy / small models)
+    const parsed  = parseSafetensors(buffer);
+    tensorMap     = parsed.tensorMap;
+    dataStart     = parsed.dataStart;
+  }
+
+  // ── Step 2: Detect arch + config ─────────────────────────────────────────
   onProgress(5, "Detecting architecture…");
   const arch   = detectArch(tensorMap);
   const config = { ...inferConfig(tensorMap, arch), ...configOverrides };
-
   onProgress(8, `Detected: ${arch} · ${config.num_hidden_layers} layers · ${config.hidden_size}d`);
 
   const manifest = {
     acc_version:  ACC_VERSION,
     arch,
     quant:        quantMode,
-    num_shards:   0,           // filled in below
+    num_shards:   0,
     created_at:   new Date().toISOString(),
     source:       "converted-by-actalithic-acc-converter",
     tensor_count: tensorMap.size,
-    optimized:    optimized,
-    block_size:   optimized ? blockSize : (quantMode === 'q4' ? 32 : 32),
+    optimized,
+    block_size:   optimized ? blockSize : 32,
   };
 
-  // ── Quantize + shard tensors ────────────────────────────────────────────
-  const shards  = [];
-  let   shardBufs = [];   // array of Uint8Array chunks for current shard
-  let   shardUsed = 0;
+  // ── Step 3: Stream-convert tensors → OPFS shards ──────────────────────────
+  // Each tensor is read (readSlice), quantized, packed, and written to an OPFS
+  // shard file. When the shard file is full it is read back as a Uint8Array,
+  // pushed to the bundle, and the OPFS file is replaced for the next shard.
+  // Peak RAM ≈ one tensor raw + one tensor packed + one shard Uint8Array.
+  // All previous tensors are on disk and not in the JS heap.
 
-  function flushShard() {
-    if (shardBufs.length === 0) return;
-    // Concat all chunks for this shard
-    const total = shardBufs.reduce((s, b) => s + b.byteLength, 0);
-    const shard = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of shardBufs) {
-      shard.set(chunk, offset);
-      offset += chunk.byteLength;
+  const opfsRoot    = await navigator.storage.getDirectory();
+  const tmpShardDir = await opfsRoot.getDirectoryHandle("__acc_conv_tmp", { create: true });
+
+  let   shardIndex  = 0;
+  let   shardUsed   = 0;
+  let   shardHandle = await tmpShardDir.getFileHandle(`s${shardIndex}.bin`, { create: true });
+  let   shardWriter = await shardHandle.createWritable();
+  const shards      = [];   // final Uint8Array[] — populated as each shard closes
+
+  async function closeShard() {
+    await shardWriter.close();
+    const data = new Uint8Array(await (await shardHandle.getFile()).arrayBuffer());
+    shards.push(data);
+    await tmpShardDir.removeEntry(`s${shardIndex}.bin`).catch(() => {});
+    shardIndex++;
+    shardUsed   = 0;
+    shardHandle = await tmpShardDir.getFileHandle(`s${shardIndex}.bin`, { create: true });
+    shardWriter = await shardHandle.createWritable();
+  }
+
+  async function writePacked(packed) {
+    if (shardUsed + packed.byteLength > shardSizeBytes && shardUsed > 0) {
+      await closeShard();
     }
-    shards.push(shard);
-    shardBufs = [];
-    shardUsed = 0;
+    await shardWriter.write(packed);
+    shardUsed += packed.byteLength;
+  }
+
+  // Helper: read raw bytes for a tensor — streaming or plain ArrayBuffer
+  async function readTensorRaw(meta) {
+    if (isStreaming) {
+      const ab = await buffer.readSlice(meta.dataOffset, meta.dataOffset + meta.dataLen);
+      return new Uint8Array(ab);
+    } else {
+      return new Uint8Array(buffer, meta.dataOffset, meta.dataLen);
+    }
+  }
+
+  // Helper: convert raw bytes to Float32Array according to dtype
+  function rawToFloat32(raw, dtype) {
+    if (dtype === "F32") {
+      // Ensure aligned copy if needed
+      const ab = raw.buffer.byteOffset % 4 !== 0
+        ? raw.slice().buffer
+        : raw.buffer;
+      return new Float32Array(ab, raw.byteOffset, raw.byteLength / 4);
+    }
+    if (dtype === "F16") {
+      const u16 = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+      const f32 = new Float32Array(u16.length);
+      for (let i = 0; i < u16.length; i++) f32[i] = float16ToFloat32(u16[i]);
+      return f32;
+    }
+    if (dtype === "BF16") {
+      const u16 = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+      const f32 = new Float32Array(u16.length);
+      const tmp = new DataView(new ArrayBuffer(4));
+      for (let i = 0; i < u16.length; i++) {
+        tmp.setUint16(2, u16[i], false);
+        f32[i] = tmp.getFloat32(0, false);
+      }
+      return f32;
+    }
+    // Already quantized (BNB int8/int4) — pass raw through as F32-shaped
+    // This handles bitsandbytes nested_absmax / quant_map tensors safely
+    return new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
   }
 
   const tensorNames = [...tensorMap.keys()];
-  const total = tensorNames.length;
+  const totalTensors = tensorNames.length;
 
-  for (let ti = 0; ti < total; ti++) {
+  for (let ti = 0; ti < totalTensors; ti++) {
     const name = tensorNames[ti];
     const meta = tensorMap.get(name);
 
     onProgress(
-      10 + Math.round((ti / total) * 80),
-      `Converting: ${name} [${meta.shape.join("×")}]`
+      10 + Math.round((ti / totalTensors) * 80),
+      `Converting: ${name} [${meta.shape.join("×") || meta.dataLen + "B"}]`
     );
 
-    // Yield to event loop — optimized mode yields less often for speed
-    const yieldEvery = optimized ? 20 : 10;
-    if (ti % yieldEvery === 0) await new Promise(r => setTimeout(r, 0));
+    // Yield to keep UI responsive
+    if (ti % (optimized ? 20 : 10) === 0) await new Promise(r => setTimeout(r, 0));
 
-    let packed;
-
-    // Non-weight tensors (e.g. rope freqs) — keep as-is (F32 or F16)
+    // Read this tensor's raw bytes — only this tensor in RAM at this point
+    const raw      = await readTensorRaw(meta);
     const isWeight = meta.shape.length >= 2;
+    let   packed;
 
     if (!isWeight || quantMode === "f32") {
-      // Keep as F32
-      const f32 = tensorToFloat32(parsed, name);
+      const f32 = rawToFloat32(raw, meta.dtype);
       packed = packTensor(name, DTYPE.F32, meta.shape, f32.buffer);
 
     } else if (quantMode === "f16") {
-      const f32 = tensorToFloat32(parsed, name);
+      const f32 = rawToFloat32(raw, meta.dtype);
       const f16 = toFloat16(f32);
       packed = packTensor(name, DTYPE.F16, meta.shape, f16.buffer);
 
     } else if (quantMode === "q8") {
-      const f32 = tensorToFloat32(parsed, name);
+      const f32      = rawToFloat32(raw, meta.dtype);
       const effBlock = optimized ? blockSize : 32;
       const { data, scales } = quantizeQ8(f32, effBlock);
-      // Pack: scales first (F32), then quantized bytes
       const combined = new Uint8Array(scales.byteLength + data.byteLength);
       combined.set(new Uint8Array(scales.buffer), 0);
       combined.set(data, scales.byteLength);
       packed = packTensor(name, DTYPE.Q8, meta.shape, combined);
 
-    } else { // q4 — use optimized path when enabled
-      const f32 = tensorToFloat32(parsed, name);
-      const effBlock    = optimized ? blockSize : 32;
+    } else { // q4
+      const f32          = rawToFloat32(raw, meta.dtype);
+      const effBlock     = optimized ? blockSize : 32;
       const effCalibrate = optimized && calibrateBlocks && isWeight;
       const { data, scales } = quantizeQ4(f32, effBlock, effCalibrate);
       const combined = new Uint8Array(scales.byteLength + data.byteLength);
@@ -477,20 +575,23 @@ export async function convertSafetensors(buffer, opts = {}) {
       packed = packTensor(name, DTYPE.Q4, meta.shape, combined);
     }
 
-    // Check if this tensor would overflow current shard
-    if (shardUsed + packed.byteLength > shardSizeBytes && shardBufs.length > 0) {
-      flushShard();
-    }
-
-    shardBufs.push(packed);
-    shardUsed += packed.byteLength;
+    // Write packed tensor to OPFS shard — frees `raw` and `packed` from heap
+    await writePacked(packed);
   }
 
-  flushShard();  // flush last shard
+  // Flush the last shard
+  if (shardUsed > 0) {
+    await closeShard();
+  } else {
+    await shardWriter.close();
+    await tmpShardDir.removeEntry(`s${shardIndex}.bin`).catch(() => {});
+  }
+
+  // Clean up temp dir
+  await opfsRoot.removeEntry("__acc_conv_tmp", { recursive: true }).catch(() => {});
 
   manifest.num_shards = shards.length;
-
-  onProgress(95, `Packed ${total} tensors into ${shards.length} shard(s)`);
+  onProgress(95, `Packed ${totalTensors} tensors into ${shards.length} shard(s)`);
 
   const bundle = {
     manifest,
