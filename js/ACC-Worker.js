@@ -113,17 +113,46 @@ async function handleLoad(model) {
   const tokenizerJson = await fetchText(`${model.hfBase}/${model.hfTokenizerFile}`).catch(() => null);
 
   progress(46, "Compiling to .acc format (Q4 optimised)…", "compile");
-  const bundle = await convertSafetensors(safetensors, {
+
+  // convertSafetensors receives a StreamingBuffer (_isStreamingBuffer=true).
+  // If acc-converter.js supports the streaming interface it will call
+  // buf.readSlice(start, end) per tensor — peak RAM stays at one tensor at a time.
+  // If it only accepts a plain ArrayBuffer we fall back to toArrayBuffer(),
+  // which throws a clear message instead of a cryptic allocation failure.
+  const convOpts = {
     quantMode:       model.quant  || "q4",
-    shardSizeBytes:  256 * 1024 * 1024,   // 256 MB shards — stream-upload to GPU, lower peak RAM
+    shardSizeBytes:  256 * 1024 * 1024,   // 256 MB shards — stream-upload to GPU
     onProgress:      (pct, msg) => progress(46 + pct * 0.28, msg, "compile"),
     configOverrides: { arch: model.arch || "llama" },
     tokenizerJson,
     optimized:       true,
-    blockSize:       128,                 // 128-element Q4 blocks — 2× fewer dequant ops vs MLC
+    blockSize:       128,
     calibrateBlocks: true,
-  });
-  safetensors = null; // free raw download buffer — saves ~2–5 GB RAM
+  };
+
+  let bundle;
+  try {
+    bundle = await convertSafetensors(safetensors, convOpts);
+  } catch (convErr) {
+    // Fallback: converter doesn't support StreamingBuffer — materialise to ArrayBuffer
+    if (safetensors._isStreamingBuffer) {
+      progress(46, "Loading model into memory for conversion…", "compile");
+      let flatBuf;
+      try { flatBuf = await safetensors.toArrayBuffer(); }
+      catch (oomErr) {
+        await safetensors.cleanup().catch(() => {});
+        throw oomErr;
+      }
+      bundle = await convertSafetensors(flatBuf, convOpts);
+      flatBuf = null;
+    } else {
+      throw convErr;
+    }
+  }
+
+  // Clean up OPFS temp file and free all download RAM
+  if (safetensors._isStreamingBuffer) await safetensors.cleanup().catch(() => {});
+  safetensors = null;
 
   progress(74, "Caching to OPFS…", "cache");
   await saveToOPFS(bundle, model.id).catch(e =>
@@ -838,30 +867,85 @@ class ACCTokenizer {
 }
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
+//
+// downloadWithProgress — streams to OPFS then returns a StreamingBuffer.
+// The old code accumulated all chunks in a JS array then allocated a SECOND
+// giant Uint8Array to copy into — peak RAM = 2× model size.
+// For a 1 GB model that means 2 GB of heap, which always OOMs.
+// This version writes every chunk straight to disk (peak RAM ≈ 64 KB per chunk).
+//
 async function downloadWithProgress(url, onProgress) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
   const total  = parseInt(res.headers.get("content-length") || "0");
   const reader = res.body.getReader();
-  const chunks = [];
+
+  // Stream chunks directly to OPFS — no in-memory accumulation
+  const opfsRoot   = await navigator.storage.getDirectory();
+  const tmpName    = `__acc_dl_${Date.now()}.bin`;
+  const fileHandle = await opfsRoot.getFileHandle(tmpName, { create: true });
+  const writable   = await fileHandle.createWritable();
+
   let received = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    await writable.write(value);   // flush to disk, chunk immediately GC-eligible
     received += value.length;
     onProgress(total > 0 ? Math.round((received / total) * 100) : 0, (received / 1e6).toFixed(1));
   }
-  const all = new Uint8Array(received);
-  let off = 0;
-  for (const c of chunks) { all.set(c, off); off += c.length; }
-  return all.buffer;
+  await writable.close();
+
+  // Return a lazy StreamingBuffer — reads one tensor slice at a time via File.slice()
+  const file = await fileHandle.getFile();
+  return makeStreamingBuffer(file, tmpName, opfsRoot);
 }
 
+// ─── StreamingBuffer ──────────────────────────────────────────────────────────
+// Wraps an OPFS File so convertSafetensors can call readSlice(start, end) per
+// tensor instead of holding the entire model in a single ArrayBuffer.
+// Peak RAM during conversion ≈ size of one tensor (a few MB) rather than 1+ GB.
+function makeStreamingBuffer(file, tmpName, opfsRoot) {
+  return {
+    _isStreamingBuffer: true,
+    byteLength: file.size,
+
+    // Sync Blob slice — caller must await .arrayBuffer() on the result
+    slice(start, end) { return file.slice(start, end); },
+
+    // Async helper — primary API for streaming-aware convertSafetensors
+    async readSlice(start, end) { return file.slice(start, end).arrayBuffer(); },
+
+    // Full materialisation — fallback only; throws a clear OOM message
+    async toArrayBuffer() {
+      try { return await file.arrayBuffer(); }
+      catch (e) {
+        throw new Error(
+          `Array buffer allocation failed (${(file.size / 1e9).toFixed(2)} GB model) — ` +
+          `not enough RAM. Use a smaller/quantized model or Chrome/Edge 64-bit.`
+        );
+      }
+    },
+
+    // Cleanup OPFS temp file after conversion is done
+    async cleanup() { await opfsRoot.removeEntry(tmpName).catch(() => {}); },
+  };
+}
+
+// downloadRaw — used by the hosted CDN path for individual shards.
+// Each ACC shard is ≤256 MB by design, so a direct arrayBuffer() is safe here.
+// If a shard exceeds available RAM the error will be caught by the caller.
 async function downloadRaw(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
-  return res.arrayBuffer();
+  try {
+    return await res.arrayBuffer();
+  } catch (e) {
+    throw new Error(
+      `Failed to load shard from ${url}: ${e.message}. ` +
+      `Try reducing shard size in the converter (currently 256 MB).`
+    );
+  }
 }
 
 async function fetchText(url) {
